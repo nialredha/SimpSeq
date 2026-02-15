@@ -14,13 +14,3 @@ cl /I..\src /I..\base ..\wav_dump_with_data.c %cl_flags% /link /out:"wav_dump_wi
 
 REM WAV to WAV
 cl /I..\src /I..\base ..\wav_to_wav.c %cl_flags% /link /out:"wav_to_wav.exe"
-
-
-REM WAV Dump V2
-cl /I..\src /I..\base ..\wav_dump_v2.c %cl_flags% /link /out:"wav_dump_v2.exe"
-
-REM WAV Dump With Data V2
-cl /I..\src /I..\base ..\wav_dump_with_data_v2.c %cl_flags% /link /out:"wav_dump_with_data_v2.exe"
-
-REM WAV to WAV V2
-cl /I..\src /I..\base ..\wav_to_wav_v2.c %cl_flags% /link /out:"wav_to_wav_v2.exe"

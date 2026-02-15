@@ -20,16 +20,16 @@ int main(int args, char** argv)
     Arena arena = {0};
     arena_alloc(&arena, 4096);
 
-    String filename   = STR_C(argv[1]);
-    String file       = read_entire_file(filename);
-    Chunk_Node* first = wav_chunks_from_file(&arena, file);
+    String filename     = STR_C(argv[1]);
+    String file         = read_entire_file(filename);
+    Wav_Chunk_Node* root = wav_chunks_from_file(&arena, file);
 
-    RIFF_Chunk* riff_chunk = (RIFF_Chunk*)first->header;
-    if (riff_chunk->header.id == FOURCC(RIFF_CHUNK_ID) && 
-        riff_chunk->format    == FOURCC(RIFF_CHUNK_FORMAT_WAV))
+    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)root->header;
+    if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && 
+        riff_chunk->format    == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
     {
-        String riff_chunk_id = STR_FROM_FOURCC(riff_chunk->header.id);
-        String riff_format   = STR_FROM_FOURCC(riff_chunk->format);
+        String riff_chunk_id = WAV_STR_FROM_FOURCC(riff_chunk->header.id);
+        String riff_format   = WAV_STR_FROM_FOURCC(riff_chunk->format);
 
         printf("Chunk %.*s {\n"
                "  id     = %.*s,\n"
@@ -40,41 +40,61 @@ int main(int args, char** argv)
                riff_chunk->header.size,
                riff_format.count, riff_format.data);
 
-        for (Chunk_Node* n = first->next; n != 0; n = n->next)
+        for (Wav_Chunk_Node* n = root->first_child; n != 0; n = n->next_sibling)
         {
-            Chunk_Header* header = n->header;
-
-            if (header->id == FOURCC(FORMAT_CHUNK_ID))
+            if (n->header->id == WAV_FOURCC(WAV_FORMAT_CHUNK_ID))
             {
-                Fmt_Chunk* format_chunk = (Fmt_Chunk*)header;
+                Wav_Format* format = (Wav_Format*)n->data;
 
-                String fmt_id = STR_FROM_FOURCC(format_chunk->header.id);
-                String audio_format_str = wav_string_from_format(format_chunk->audio_format);
+                String fmt_id  = WAV_STR_FROM_FOURCC(n->header->id);
+                String fmt_tag = wav_string_from_format_tag(format->format_tag);
 
                 printf("  Sub-Chunk %.*s {\n"
                        "    id            = %.*s,\n" 
                        "    size          = %u,\n"
-                       "    audio format  = %.*s,\n" 
+                       "    format tag    = %.*s,\n" 
                        "    num channels  = %u,\n"
                        "    sample rate   = %u,\n"
                        "    byte rate     = %u,\n"
                        "    block align   = %u,\n"
-                       "    bits per samp = %u\n"
-                       "  },\n",
+                       "    bits per samp = %u\n",
                        fmt_id.count, fmt_id.data,
                        fmt_id.count, fmt_id.data,
-                       format_chunk->header.size,
-                       audio_format_str.count, audio_format_str.data,
-                       format_chunk->num_channels,
-                       format_chunk->sample_rate,
-                       format_chunk->byte_rate,
-                       format_chunk->block_align,
-                       format_chunk->bits_per_sample);
+                       n->header->size,
+                       fmt_tag.count, fmt_tag.data,
+                       format->num_channels,
+                       format->sample_rate,
+                       format->byte_rate,
+                       format->block_align,
+                       format->bits_per_sample);
+
+                if (format->format_tag == Wav_Format_Tag_EXTENSIBLE)
+                {
+                    Wav_Format_Ext* format_ext = (Wav_Format_Ext*)n->data;
+                    printf("    cb size             = %d,\n"
+                           "    valid bits per samp = %d,\n"
+                           "    channel mask        = %08X,\n",
+                           format_ext->cb_size,
+                           format_ext->valid_bits_per_sample,
+                           format_ext->channel_mask);
+
+                    printf("    sub format {\n");
+                    for (u32 i = 0; i < sizeof(format_ext->sub_format); i += 1)
+                    {
+                        printf("%02X ", format_ext->sub_format[i]);
+                        if ((i + 1) % 8 == 0)
+                        {
+                            printf(" ");
+                        }
+                    }
+                    printf("\n");
+                    printf("    }\n");
+                }
+                printf("  },\n");
             }
-            else if (header->id == FOURCC(DATA_CHUNK_ID))
+            else if (n->header->id == WAV_FOURCC(WAV_DATA_CHUNK_ID))
             {
-                Data_Chunk* data_chunk = (Data_Chunk*)header; 
-                String data_id = STR_FROM_FOURCC(data_chunk->header.id);
+                String data_id = WAV_STR_FROM_FOURCC(n->header->id);
 
                 printf("  Sub-Chunk %.*s {\n"
                        "    id    = %.*s,\n" 
@@ -82,21 +102,22 @@ int main(int args, char** argv)
                        "  },\n",
                        data_id.count, data_id.data,
                        data_id.count, data_id.data,
-                       data_chunk->header.size);
+                       n->header->size);
             }
             else
             {
-                String unknown_chunk_id = STR_FROM_FOURCC(header->id);
+                String unknown_chunk_id = WAV_STR_FROM_FOURCC(n->header->id);
                 printf("  Sub-Chunk %.*s {\n"
                        "    id   = %.*s,\n" 
                        "    size = %u\n"
                        "  },\n",
                        unknown_chunk_id.count, unknown_chunk_id.data,
                        unknown_chunk_id.count, unknown_chunk_id.data,
-                       header->size);
+                       n->header->size);
             }
         }
         printf("}\n"); // end of RIFF chunk
     }
+
     return 0;
 }

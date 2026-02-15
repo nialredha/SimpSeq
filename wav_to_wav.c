@@ -20,13 +20,13 @@ int main(int args, char** argv)
     Arena chunk_arena = {0};
     arena_alloc(&chunk_arena, 4096);
 
-    String filename   = STR_C(argv[1]);
-    String file       = read_entire_file(filename);
-    Chunk_Node* first = wav_chunks_from_file(&chunk_arena, file);
+    String filename     = STR_C(argv[1]);
+    String file         = read_entire_file(filename);
+    Wav_Chunk_Node* root = wav_chunks_from_file(&chunk_arena, file);
 
     Arena file_arena   = {0};
     arena_alloc(&file_arena, 1024*1024);
-    String file_clone = wav_file_from_chunks(&file_arena, first);
+    String file_clone = wav_file_from_chunks(&file_arena, root);
 
     write_entire_file(STR_LIT("file_clone.wav"), file_clone);
 
