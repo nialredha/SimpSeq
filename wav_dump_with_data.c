@@ -9,9 +9,9 @@
 #include "base_io.c"
 #include "wav.c"
 
-int main(int args, char** argv)
+int main(int argc, char** argv)
 {
-    if (args != 2)
+    if (argc != 2)
     {
         printf("Not enough arguments!\n Example usage: .\\%s test.wav\n", argv[0]);
         return 1;

@@ -14,3 +14,6 @@ cl /I..\src /I..\base ..\wav_dump_with_data.c %cl_flags% /link /out:"wav_dump_wi
 
 REM WAV to WAV
 cl /I..\src /I..\base ..\wav_to_wav.c %cl_flags% /link /out:"wav_to_wav.exe"
+
+REM WAV Play WIN32
+cl /I..\base ..\wav_play_win32.c %cl_flags% /TP /link Ole32.lib /out:"wav_play_win32.exe"

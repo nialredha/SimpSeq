@@ -36,8 +36,9 @@ Wav_Chunk_Node* wav_chunks_from_file(Arena* arena, String file)
                 root->first_child = node;
 
                 // first child is the last and only sibling to itself
-                root->first_child->last_sibling = node;
+                root->first_child->first_child  = 0;
                 root->first_child->next_sibling = 0;
+                root->first_child->last_sibling = node;
             }
             else // sibling to first child
             {
@@ -46,6 +47,7 @@ Wav_Chunk_Node* wav_chunks_from_file(Arena* arena, String file)
                 root->first_child->last_sibling->last_sibling = node;
 
                 // new node points nowhere
+                node->first_child  = 0;
                 node->next_sibling = 0;
                 node->last_sibling = node;
 
