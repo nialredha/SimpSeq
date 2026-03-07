@@ -44,7 +44,7 @@ bool str_is_number(char c);
 bool str_is_numeric(char c);
 
 // string builder
-String_Builder strb_new(u32 size);
-void strb_append(String_Builder* strb, String str);;
+void strb_append(String_Builder* strb, String str);
+void strb_clear (String_Builder* strb);
 
 #endif // BASE_STRING_H

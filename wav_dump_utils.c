@@ -102,8 +102,20 @@ void wav_dump_bin(Arena* arena, u32 start_offset, u32 bytes_per_line, u32 bytes_
 
     u32 total_bytes = size;
 
+#if PROGRESS_BAR
+    String_Builder progress_bar = {0};
+    arena_alloc(&progress_bar.arena, 1024*1024);
+#endif
+
     for (u32 line_index = 0; line_index < total_lines; line_index += 1)
     {
+#if PROGRESS_BAR
+        strb_clear(&progress_bar);
+        wav_dump_progress_bar(arena, line_index, total_lines, 80, &progress_bar);
+        printf("%.*s", progress_bar.str.count, progress_bar.str.data);
+        fflush(stdout);
+#endif
+
         Arena_Temp temp = arena_temp_begin(arena);
 
         if (!disable_offset)
@@ -173,4 +185,33 @@ void wav_dump_bin(Arena* arena, u32 start_offset, u32 bytes_per_line, u32 bytes_
 
         arena_temp_end(temp);
     }
+
+#if PROGRESS_BAR
+    printf("\n"); fflush(stdout);
+    arena_free(&progress_bar.arena);
+#endif
+}
+
+void wav_dump_progress_bar(Arena* arena, u32 bytes_processed, u32 total_bytes, u32 width, String_Builder* out)
+{
+    f32 frac_complete = (f32)bytes_processed / total_bytes;
+
+    u32 fill_width = (u32)(frac_complete * width);
+
+    strb_append(out, STR_LIT("\r["));
+    for (u32 i = 0; i < width; i += 1)
+    {
+        if (i < fill_width)
+        {
+            strb_append(out, STR_LIT("#"));
+        }
+        else
+        {
+            strb_append(out, STR_LIT("."));
+        }
+    }
+
+    Arena_Temp temp = arena_temp_begin(arena);
+    strb_append(out, str_format(arena, "] %3d%% ", (u32)(frac_complete*100)));
+    arena_temp_end(temp);
 }

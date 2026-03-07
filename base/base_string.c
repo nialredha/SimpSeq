@@ -251,3 +251,10 @@ void strb_append(String_Builder* strb, String str)
 
     return;
 }
+
+void strb_clear(String_Builder* strb)
+{
+    arena_reset(&strb->arena);
+    strb->str.count = 0;
+    return;
+}

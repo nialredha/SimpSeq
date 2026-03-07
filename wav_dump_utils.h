@@ -16,5 +16,7 @@ void wav_dump_format   (Arena* arena, Wav_Format* format, u32 level, String_Buil
 
 void wav_dump_bin(Arena* arena, u32 start_offset, u32 bytes_per_line, u32 bytes_per_group, u32 level, bool disable_offset, bool disable_ascii, u8* data, u32 size, String_Builder* out);
 
+void wav_dump_progress_bar(Arena* arena, u32 bytes_processed, u32 total_bytes, u32 width, String_Builder* out);
+
 #endif // WAV_DUMP_UTILS
 
