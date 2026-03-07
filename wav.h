@@ -3,6 +3,13 @@
 
 #define WAV_FOURCC(s) *((u32*)(s))
 
+#define WAV_FOURCC_FMT "%c%c%c%c"
+#define WAV_FOURCC_ARG(c) \
+    (char)(((c) >>  0) & 0xFF),\
+    (char)(((c) >>  8) & 0xFF),\
+    (char)(((c) >> 16) & 0xFF),\
+    (char)(((c) >> 24) & 0xFF)
+
 #define WAV_STR_FROM_FOURCC(c)\
     STR_C(((char[5])\
     {\
@@ -30,16 +37,43 @@ typedef struct
     u32              format;
 } Wav_RIFF_Chunk;
 
-typedef struct Wav_Chunk_Node
+typedef struct Wav_Sub_Chunk_Node
 {
-    Wav_Chunk_Header* header;
-    u8*               data;
+    struct Wav_Sub_Chunk_Node* next;
 
-    struct Wav_Chunk_Node* parent;
-    struct Wav_Chunk_Node* first_child;
-    struct Wav_Chunk_Node* next_sibling;
-    struct Wav_Chunk_Node* last_sibling;
-} Wav_Chunk_Node;
+    Wav_Chunk_Header header;
+    u32              data_offset;
+} Wav_Sub_Chunk_Node;
+
+typedef struct
+{
+    Wav_Sub_Chunk_Node* first;
+    Wav_Sub_Chunk_Node* last;
+
+    u32 count;
+} Wav_Sub_Chunk_List;
+
+typedef struct
+{
+    Wav_RIFF_Chunk     riff_chunk;
+    Wav_Sub_Chunk_List sub_chunks;
+} Wav;
+
+typedef struct Wav_Node
+{
+    struct Wav_Node* next;
+
+    Wav_RIFF_Chunk     riff_chunk;
+    Wav_Sub_Chunk_List sub_chunks;
+} Wav_Node;
+
+typedef struct
+{
+    Wav_Node* first;
+    Wav_Node* last;
+
+    u32 count;
+} Wav_List;
 
 #define WAV_FORMAT_TAG_XLIST(X)\
     X(PCM,        0x0001)\
@@ -64,17 +98,13 @@ typedef struct
     u32            byte_rate;   // bytes per second - (samples_per_second * bytes_per_sample * num_channels)
     u16            block_align; // bytes per frame  - (bytes_per_sample * num_channels)
     u16            bits_per_sample;
-} Wav_Format;
 
-typedef struct
-{
-    Wav_Format format;
-    
+    // Extended Format (when format_tag == EXTENSIBLE && cb_size == 22)
     u16 cb_size;
     u16 valid_bits_per_sample;
     u32 channel_mask;
     u8  sub_format[16];
-} Wav_Format_Ext;
+} Wav_Format;
 
 typedef struct
 {
@@ -83,9 +113,11 @@ typedef struct
 } Wav_Data;
 
 // chunks
-Wav_Chunk_Node* wav_chunks_from_file (Arena* arena, String file);
-Wav_Chunk_Node* wav_chunk_from_id    (Wav_Chunk_Node* root, u32 id);
-String          wav_file_from_chunks (Arena* arena, Wav_Chunk_Node* root);
+Wav      wav_from_data      (Arena* arena, String data);
+Wav_List wav_list_from_data (Arena* arena, String data);
+
+Wav_Sub_Chunk_List wav_sub_chunk_list_from_data (Arena* arena, String data);
+Wav_Sub_Chunk_Node wav_sub_chunk_from_id        (Wav_Sub_Chunk_List* list, u32 id);
 
 // strings
 String wav_string_from_format_tag(Wav_Format_Tag format_tag);

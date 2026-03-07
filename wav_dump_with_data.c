@@ -3,260 +3,159 @@
 #include "base_string.h"
 #include "base_io.h"
 #include "wav.h"
+#include "wav_dump_utils.h"
 
 #include "base_arena.c"
 #include "base_string.c"
 #include "base_io.c"
 #include "wav.c"
+#include "wav_dump_utils.c"
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
+    // globals
+    Arena arena = {0};
+
+    String filename_in = {0};
+    String file_in     = {0};
+
+    String filename_out = {0};
+
+    Wav wav = {0};
+
+    String_Builder strb = {0};
+
+    // get input filename
+    if (argc < 2)
     {
-        printf("Not enough arguments!\n Example usage: .\\%s test.wav\n", argv[0]);
+        fprintf(stderr, "ERROR: not enough arguments!\n  Usage: .\\%s <path_to_wav_file> <OPTIONAL: path_to_output_dump_file>\n", argv[0]);
+        return 1;
+    }
+    filename_in = STR_C(argv[1]);
+
+    // try get optional output filename, default to stdout
+    if (argc > 2)
+    {
+        if (argc != 3)
+        {
+            fprintf(stderr, "ERROR: too many arguments!\n  Usage: .\\%s <path_to_wav_file> <OPTIONAL: path_to_output_dump_file>\n", argv[0]);
+            return 1;
+        }
+        filename_out = STR_C(argv[2]);
+    }
+
+    arena_alloc(&arena, 4096);
+
+    file_in = read_entire_file(filename_in);
+    if (file_in.data == 0)
+    {
+        fprintf(stderr, "Failed to read file %.*s!\n", filename_in.count, filename_in.data);
         return 1;
     }
 
-    Arena arena = {0};
-    arena_alloc(&arena, 4096);
+    wav = wav_from_data(&arena, file_in);
 
-    String filename     = STR_C(argv[1]);
-    String file         = read_entire_file(filename);
-    Wav_Chunk_Node* root = wav_chunks_from_file(&arena, file);
+    arena_alloc(&strb.arena, 6*file_in.count);
 
-    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)root->header;
-    if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && 
-        riff_chunk->format    == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
+    // riff chunk
+    wav_dump_riff(&arena, &wav.riff_chunk, 0, &strb);
+
+    // sub chunks
+    for (Wav_Sub_Chunk_Node* n = wav.sub_chunks.first; n != 0; n = n->next)
     {
-        String riff_chunk_id = WAV_STR_FROM_FOURCC(riff_chunk->header.id);
-        String riff_format   = WAV_STR_FROM_FOURCC(riff_chunk->format);
-
-        printf("Chunk %.*s {\n"
-               "  id     = %.*s,\n"
-               "  size   = %u,\n"
-               "  format = %.*s\n",
-               riff_chunk_id.count, riff_chunk_id.data,
-               riff_chunk_id.count, riff_chunk_id.data,
-               riff_chunk->header.size,
-               riff_format.count, riff_format.data);
-
-
-        u32 bytes_per_sample = 0;
-        u32 bytes_per_frame  = 0;
-
-        for (Wav_Chunk_Node* n = root->first_child; n != 0; n = n->next_sibling)
+        if (n->header.id == WAV_FOURCC(WAV_FORMAT_CHUNK_ID))
         {
-            if (n->header->id == WAV_FOURCC(WAV_FORMAT_CHUNK_ID))
-            {
-                Wav_Format* format = (Wav_Format*)n->data;
+            Wav_Format* format = (Wav_Format*)(file_in.data + n->data_offset);
 
-                String fmt_id  = WAV_STR_FROM_FOURCC(n->header->id);
-                String fmt_tag = wav_string_from_format_tag(format->format_tag);
+            String fmt_id  = WAV_STR_FROM_FOURCC(n->header.id);
 
-                printf("  Sub-Chunk %.*s {\n"
-                       "    id            = %.*s,\n" 
-                       "    size          = %u,\n"
-                       "    format tag    = %.*s,\n" 
-                       "    num channels  = %u,\n"
-                       "    sample rate   = %u,\n"
-                       "    byte rate     = %u,\n"
-                       "    block align   = %u,\n"
-                       "    bits per samp = %u\n",
-                       fmt_id.count, fmt_id.data,
-                       fmt_id.count, fmt_id.data,
-                       n->header->size,
-                       fmt_tag.count, fmt_tag.data,
-                       format->num_channels,
-                       format->sample_rate,
-                       format->byte_rate,
-                       format->block_align,
-                       format->bits_per_sample);
+            strb_append(&strb, 
+                        str_format(&arena, 
+                                   "Sub-Chunk %.*s {\n"
+                                   "  id            = %.*s,\n" 
+                                   "  size          = %u,\n",
+                                   fmt_id.count, fmt_id.data,
+                                   fmt_id.count, fmt_id.data,
+                                   n->header.size));
 
-                if (format->format_tag == Wav_Format_Tag_EXTENSIBLE)
-                {
-                    Wav_Format_Ext* format_ext = (Wav_Format_Ext*)n->data;
-                    printf("    cb size             = %d,\n"
-                           "    valid bits per samp = %d,\n"
-                           "    channel mask        = %08X,\n",
-                           format_ext->cb_size,
-                           format_ext->valid_bits_per_sample,
-                           format_ext->channel_mask);
-
-                    printf("    sub format {\n");
-                    for (u32 i = 0; i < sizeof(format_ext->sub_format); i += 1)
-                    {
-                        printf("%02X ", format_ext->sub_format[i]);
-                        if ((i + 1) % 8 == 0)
-                        {
-                            printf(" ");
-                        }
-                    }
-                    printf("\n");
-                    printf("    }\n");
-                }
-                printf("  },\n");
-
-                bytes_per_sample = (format->bits_per_sample / 8);
-                bytes_per_frame  = bytes_per_sample * format->num_channels;
-            }
-            else if (n->header->id == WAV_FOURCC(WAV_DATA_CHUNK_ID))
-            {
-                String data_id = WAV_STR_FROM_FOURCC(n->header->id);
-
-                printf("  Sub-Chunk %.*s {\n"
-                       "    id    = %.*s,\n" 
-                       "    size  = %u,\n"
-                       "    samples {",
-                       data_id.count, data_id.data,
-                       data_id.count, data_id.data,
-                       n->header->size);
-
-                u32 total_bytes     = n->header->size;
-                u32 bytes_per_line  = 4 * bytes_per_frame;
-                u32 total_lines     = (total_bytes + (bytes_per_line - 1)) / bytes_per_line;
-
-                for (u32 line_index = 0, line_count = 1;
-                     line_index < total_lines;
-                     line_index += 1, line_count += 1)
-                {
-                    printf("\n      %08X:", line_count * bytes_per_line); // byte offset
-
-                    u32 bytes_on_line = bytes_per_line < total_bytes ? bytes_per_line : total_bytes;
-
-                    u32 start_index = line_index * bytes_per_line;
-                    u32 stop_index  = start_index + bytes_on_line;
-
-                    // hex
-                    for (u32 byte_index = start_index, byte_count = start_index + 1; 
-                         byte_index < stop_index;
-                         byte_index += 1, byte_count += 1)
-                    {
-                        // print byte in hex
-                        printf(" %02X", n->data[byte_index]);
-
-                        if (byte_count != stop_index)
-                        {
-                            // indent to group each sample on a line
-                            if (byte_count % bytes_per_sample == 0)
-                            {
-                                printf(" "); 
-                            }
-
-                            // indent to group each frame on a line
-                            if (byte_count % bytes_per_frame == 0)
-                            {
-                                printf(" "); 
-                            }
-                        }
-                    }
-
-                    // ascii
-                    u32 spaces_per_line = (bytes_per_line * 3) + ((bytes_per_line / bytes_per_sample) - 1) + ((bytes_per_line / bytes_per_frame) - 1);
-                    u32 spaces_per_byte = spaces_per_line / bytes_per_line;
-                    u32 byte_padding    = (bytes_per_line - bytes_on_line);
-
-                    u32 indent = byte_padding * spaces_per_byte;
-                    printf("%*s |", indent, "");
-
-                    for (u32 byte_index = start_index, byte_count = start_index + 1; 
-                         byte_index < stop_index;
-                         byte_index += 1, byte_count += 1)
-                    {
-                        // print byte in ascii
-                        char c = (char)n->data[byte_index];
-                        if (c >= 32 && c <= 126)
-                        {
-                            printf("%c", c);
-                        }
-                        else
-                        {
-                            printf(".");
-                        }
-                    }
-                    printf("%*s|", byte_padding, "");
-
-                    total_bytes -= bytes_per_line;
-                }
-                printf("\n");
-                printf("    }\n");
-                printf("  },\n");
-            }
-            else
-            {
-                String unknown_chunk_id = WAV_STR_FROM_FOURCC(n->header->id);
-                printf("  Sub-Chunk %.*s {\n"
-                       "    id   = %.*s,\n" 
-                       "    size = %u\n"
-                       "    data {",
-                       unknown_chunk_id.count, unknown_chunk_id.data,
-                       unknown_chunk_id.count, unknown_chunk_id.data,
-                       n->header->size);
-
-                u32 total_bytes     = n->header->size;
-                u32 bytes_per_line  = 16;
-                u32 bytes_per_group = 8;
-                u32 total_lines     = (total_bytes + (bytes_per_line - 1)) / bytes_per_line;
-
-                for (u32 line_index = 0, line_count = 1;
-                     line_index < total_lines;
-                     line_index += 1, line_count += 1)
-                {
-                    printf("\n      %08X:", line_count * bytes_per_line); // byte offset
-
-                    u32 bytes_on_line = bytes_per_line < total_bytes ? bytes_per_line : total_bytes;
-
-                    u32 start_index = line_index * bytes_per_line;
-                    u32 stop_index  = start_index + bytes_on_line;
-
-                    // hex
-                    for (u32 byte_index = start_index, byte_count = 1; 
-                         byte_index < stop_index;
-                         byte_index += 1, byte_count += 1)
-                    {
-                        // print byte in hex
-                        printf(" %02X", n->data[byte_index]);
-
-                        // indent to group each sample on a line
-                        if ((byte_count % bytes_per_group == 0) && byte_count != stop_index)
-                        {
-                            printf(" "); 
-                        }
-                    }
-
-                    // ascii
-                    u32 spaces_per_line = (bytes_per_line * 3) + ((bytes_per_line / bytes_per_group) - 1);
-                    u32 spaces_per_byte = spaces_per_line / bytes_per_line;
-                    u32 byte_padding    = (bytes_per_line - bytes_on_line);
-
-                    u32 indent = byte_padding * spaces_per_byte;
-                    printf("%*s |", indent, "");
-
-                    for (u32 byte_index = start_index, byte_count = 1; 
-                         byte_index < stop_index;
-                         byte_index += 1, byte_count += 1)
-                    {
-                        // print byte in ascii
-                        char c = (char)n->data[byte_index];
-                        if (c >= 32 && c <= 126)
-                        {
-                            printf("%c", c);
-                        }
-                        else
-                        {
-                            printf(".");
-                        }                    
-                    }
-                    printf("%*s|", byte_padding, "");
-
-                    total_bytes -= bytes_per_line;
-                }
-                printf("\n");
-                printf("    }\n");
-                printf("  },\n");
-            }
+            wav_dump_format(&arena, format, 1, &strb);
         }
-        printf("}\n"); // end of RIFF chunk
+        else if (n->header.id == WAV_FOURCC(WAV_DATA_CHUNK_ID))
+        {
+            String data_id = WAV_STR_FROM_FOURCC(n->header.id);
+
+            strb_append(&strb, 
+                        str_format(&arena, 
+                        "Sub-Chunk %.*s {\n"
+                        "  id    = %.*s,\n" 
+                        "  size  = %u,\n"
+                        "  samples {\n",
+                        data_id.count, data_id.data,
+                        data_id.count, data_id.data,
+                        n->header.size));
+
+            WAV_DUMP_BIN_EXT(&arena, (u8*)&file_in.data[n->data_offset], n->header.size, &strb, n->data_offset, 2);
+
+            strb_append(&strb, STR_LIT("  }\n"
+                                       "}\n"));
+        }
+        else
+        {
+            String unknown_chunk_id = WAV_STR_FROM_FOURCC(n->header.id);
+
+            strb_append(&strb, 
+                        str_format(&arena, 
+                                   "Sub-Chunk %.*s {\n"
+                                   "  id   = %.*s,\n" 
+                                   "  size = %u\n"
+                                   "  data {\n",
+                                   unknown_chunk_id.count, unknown_chunk_id.data,
+                                   unknown_chunk_id.count, unknown_chunk_id.data,
+                                   n->header.size));
+
+            WAV_DUMP_BIN_EXT(&arena, (u8*)&file_in.data[n->data_offset], n->header.size, &strb, n->data_offset, 2);
+
+            strb_append(&strb, STR_LIT("  }\n"
+                                       "}\n"));
+        }
     }
-    
+
+    // output to stream
+    FILE* stream = stdout;
+    if (filename_out.data != 0)
+    {
+        stream = fopen(filename_out.data, "wb");
+    }
+    else
+    {
+        filename_out = STR_LIT("stdout");
+    }
+
+    u32 bytes_written = (u32)fwrite(strb.str.data, 1, strb.str.count, stream);
+    if (bytes_written != strb.str.count)
+    {
+        fprintf(stderr, "Failed to dump %s to %s!\n", filename_in.data, filename_out.data);
+        return 1;
+    }
+
+    printf("\n");
+
+    u32 left = arena.size - arena.used;
+    printf("Main Arena Metrics:\n");
+    printf("  Size: %4u B | %.2f MB | %.2f GB\n", arena.size, (f32)arena.size/(1024.0f*1024.0f), (f32)arena.size/(1024.0f*1024.0f*1024.0f));
+    printf("  Used: %4u B | %.2f MB | %.2f GB\n", arena.used, (f32)arena.used/(1024.0f*1024.0f), (f32)arena.used/(1024.0f*1024.0f*1024.0f));
+    printf("  Left: %4u B | %.2f MB | %.2f GB\n", left,       (f32)left/      (1024.0f*1024.0f), (f32)left      /(1024.0f*1024.0f*1024.0f));
+    printf("\n");
+
+    left = strb.arena.size - strb.arena.used;
+    printf("STRB Arena Metric:\n");
+    printf("  Size: %10u B | %7.2f MB | %4.2f GB\n", strb.arena.size, (f32)strb.arena.size/(1024.0f*1024.0f), (f32)strb.arena.size/(1024.0f*1024.0f*1024.0f));
+    printf("  Used: %10u B | %7.2f MB | %4.2f GB\n", strb.arena.used, (f32)strb.arena.used/(1024.0f*1024.0f), (f32)strb.arena.used/(1024.0f*1024.0f*1024.0f));
+    printf("  Left: %10u B | %7.2f MB | %4.2f GB\n", left,             (f32)left            /(1024.0f*1024.0f), (f32)left            /(1024.0f*1024.0f*1024.0f));
+    printf("\n");
+
+    f32 chars_per_byte = (f32)strb.arena.used / (f32)file_in.count;
+    printf("Chars per Byte: %f\n", chars_per_byte);
+
     return 0;
 }

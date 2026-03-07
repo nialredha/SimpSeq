@@ -1,138 +1,120 @@
-// parse
-Wav_Chunk_Node* wav_chunks_from_file(Arena* arena, String file)
+Wav_List wav_list_from_data(Arena* arena, String data)
 {
-    Wav_Chunk_Node* root = 0;
+    Wav_List list = {0};
 
-    u8* chunk_readhead = (u8*)file.data;
-    u8* end_of_file    = (u8*)file.data + file.count; // one past last
+    u8* data_readhead = (u8*)data.data;
+    u8* data_end      = (u8*)data.data + data.count; // one past last
+
+    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)data_readhead;
+
+    while (data_readhead < data_end)
+    {
+        if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && riff_chunk->format == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
+        {
+            Wav_Node* node    = ARENA_PUSH_STRUCT(arena, Wav_Node);
+            String data_slice = str((char*)data_readhead, (u32)(data_end - data_readhead));
+
+            node->riff_chunk = *riff_chunk;
+            node->sub_chunks = wav_sub_chunk_list_from_data(arena, data_slice);
+            node->next = 0;
+
+            // first node
+            if (list.last == 0)
+            {
+                list.first = node;
+                list.last  = node;
+            }
+            else // next node
+            {
+                list.last->next = node;
+                list.last = node;
+            }
+
+            list.count++;
+
+            data_readhead += (sizeof(Wav_Chunk_Header) + node->riff_chunk.header.size);
+        }
+    }
+
+    return list;
+}
+
+Wav wav_from_data(Arena* arena, String data)
+{
+    Wav wav = {0};
+
+    u8* data_readhead = (u8*)data.data;
+    u8* data_end      = (u8*)data.data + data.count; // one past last
+
+    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)data_readhead;
+
+    if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && riff_chunk->format == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
+    {
+        String data_slice = str((char*)data_readhead, (u32)(data_end - data_readhead));
+
+        wav.riff_chunk = *riff_chunk;
+        wav.sub_chunks = wav_sub_chunk_list_from_data(arena, data_slice);
+    }
+
+    return wav;
+}
+
+Wav_Sub_Chunk_List wav_sub_chunk_list_from_data(Arena* arena, String data)
+{
+    Wav_Sub_Chunk_List list = {0};
+
+    u8* data_start    = (u8*)data.data;
+    u8* data_readhead = (u8*)data.data;
+    u8* data_end      = (u8*)data.data + data.count; // one past last
         
-    // riff chunk
+    // check for riff chunk
 
-    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)chunk_readhead;
+    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)data_readhead;
 
     if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && riff_chunk->format == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
     {
-        // create root of chunk tree - the RIFF chunk
-        root         = ARENA_PUSH_STRUCT(arena, Wav_Chunk_Node);
-        root->header = (Wav_Chunk_Header*)chunk_readhead;
-        root->data   = chunk_readhead + sizeof(Wav_Chunk_Header);
+        data_readhead += sizeof(Wav_RIFF_Chunk);
 
-        root->first_child  = 0;
-        root->next_sibling = 0;
-        root->last_sibling = root;
-
-        chunk_readhead += sizeof(Wav_RIFF_Chunk);
-        Wav_Chunk_Header* chunk_header = (Wav_Chunk_Header*)chunk_readhead;
-
-        while (chunk_readhead < end_of_file)
+        while (data_readhead < data_end)
         {
-            Wav_Chunk_Node* node = ARENA_PUSH_STRUCT(arena, Wav_Chunk_Node);
-            node->header        = (Wav_Chunk_Header*)chunk_readhead;
-            node->data          = chunk_readhead + sizeof(Wav_Chunk_Header);
+            Wav_Sub_Chunk_Node* node = ARENA_PUSH_STRUCT(arena, Wav_Sub_Chunk_Node);
 
-            // first child
-            if (root->first_child == 0)
+            node->header      = *(Wav_Chunk_Header*)data_readhead;
+            node->data_offset = (u32)((data_readhead + sizeof(Wav_Chunk_Header)) - data_start);
+            node->next        = 0;
+
+            // first node
+            if (list.last == 0)
             {
-                root->first_child = node;
-
-                // first child is the last and only sibling to itself
-                root->first_child->first_child  = 0;
-                root->first_child->next_sibling = 0;
-                root->first_child->last_sibling = node;
+                list.first = node;
+                list.last  = node;
             }
-            else // sibling to first child
+            else // next node
             {
-                // last sibling node points to new node
-                root->first_child->last_sibling->next_sibling = node;
-                root->first_child->last_sibling->last_sibling = node;
-
-                // new node points nowhere
-                node->first_child  = 0;
-                node->next_sibling = 0;
-                node->last_sibling = node;
-
-                // last node becomes new node
-                root->first_child->last_sibling = node;
+                list.last->next = node;
+                list.last       = node;
             }
 
-            chunk_readhead += (sizeof(Wav_Chunk_Header) + chunk_header->size);
-            chunk_header = (Wav_Chunk_Header*)chunk_readhead;
+            list.count++;
+
+            data_readhead += (sizeof(Wav_Chunk_Header) + node->header.size);
         }
     }
 
-    return root;
+    return list;
 }
 
-Wav_Chunk_Node* wav_chunk_from_id(Wav_Chunk_Node* root, u32 id)
+Wav_Sub_Chunk_Node wav_sub_chunk_from_id(Wav_Sub_Chunk_List* list, u32 id)
 {
-    Wav_Chunk_Node* result = 0;
+    Wav_Sub_Chunk_Node result = {0};
 
-    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)root->header;
-
-    if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && riff_chunk->format == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
+    for (Wav_Sub_Chunk_Node* node = list->first; node != 0; node = node->next)
     {
-        for (Wav_Chunk_Node* n = root->first_child; n != 0; n = n->next_sibling)
+        if (node->header.id == id)
         {
-            Wav_Chunk_Header* header = n->header;
-
-            if (header->id == id)
-            {
-                result = n;
-                break;
-            }
-
-            if (n->first_child)
-            {
-                wav_chunk_from_id(n->first_child, id);
-            }
+            result = *node;
+            break;
         }
-    }
-
-    return result;
-}
-
-String wav_file_from_chunks(Arena* arena, Wav_Chunk_Node* root)
-{
-    String result = {0};
-
-    Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)root->header;
-
-    if (riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID) && riff_chunk->format == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT))
-    {
-        u32 file_size     = (sizeof(Wav_Chunk_Header) + root->header->size);
-        u8* file_contents = ARENA_PUSH_ARRAY(arena, u8, file_size);
-
-        u8* dest     = file_contents;
-        u8* src      = (u8*)root->header;
-
-        u32 bytes_to_write = 0;
-        u32 bytes_written  = 0;
-
-        // write RIFF Parent Chunk
-        bytes_to_write = sizeof(Wav_RIFF_Chunk);
-        for (u32 i = 0; i < bytes_to_write; i += 1)
-        {
-            *dest++ = *src++;
-        }
-        bytes_written += bytes_to_write;
-
-        // write remaining sub-chunks
-        for (Wav_Chunk_Node* n = root->first_child; n != 0; n = n->next_sibling)
-        {
-            src = (u8*)n->header;
-
-            bytes_to_write = sizeof(Wav_Chunk_Header) + n->header->size;
-            for (u32 i = 0; i < bytes_to_write; i += 1)
-            {
-                *dest++ = *src++;
-            }
-            bytes_written += bytes_to_write;
-        }
-
-        assert(bytes_written == file_size);
-
-        result.data  = (char*)file_contents;
-        result.count = file_size;
     }
 
     return result;

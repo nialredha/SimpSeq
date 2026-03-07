@@ -7,14 +7,22 @@ typedef struct
     u32 count;
 } String;
 
+typedef struct
+{
+    Arena  arena;
+    String str;
+} String_Builder;
+
 #define STR_LIT(s) str((char*)(s), sizeof(s) - 1)
 #define STR_C(s)   str((char*)(s), str_c_len(s)) 
 
 // construct
 static String str(char* data, u32 count);
 
-// format / copy
+// format
 static String str_format(Arena* arena, char* format, ...);
+
+// copy
 static String str_copy(Arena* arena, String str);
 
 // slice
@@ -35,7 +43,8 @@ bool str_is_letter(char c);
 bool str_is_number(char c);
 bool str_is_numeric(char c);
 
-// print
-void str_print(String str);
+// string builder
+String_Builder strb_new(u32 size);
+void strb_append(String_Builder* strb, String str);;
 
 #endif // BASE_STRING_H

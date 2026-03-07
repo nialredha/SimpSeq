@@ -223,17 +223,31 @@ bool str_is_numeric(char c)
     return result;
 }
 
-// print
-void str_print(String str)
-{
-    if (str.data && str.count > 0)
-    {
-        for (u32 char_index = 0; 
-             char_index < str.count; 
-             ++char_index)
-        {
-            printf("%c", str.data[char_index]);
-        }
-    }
-}
+// string builder
 
+void strb_append(String_Builder* strb, String str)
+{
+    u32 new_count = strb->str.count + str.count;
+    
+    if (strb->str.count == 0)
+    {
+        strb->str.data = ARENA_PUSH_ARRAY(&strb->arena, char, new_count);
+    }
+    else
+    {
+        strb->str.data = ARENA_RESIZE_ARRAY(&strb->arena, char, strb->str.data, strb->str.count, new_count);
+    }
+
+    char* src  = str.data;
+    char* dest = strb->str.data + strb->str.count;
+    while (str.count > 0)
+    {
+        *dest++ = *src++;
+
+        str.count--;
+    }
+
+    strb->str.count = new_count;
+
+    return;
+}

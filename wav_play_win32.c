@@ -10,11 +10,13 @@
 #include "base_string.h"
 #include "base_io.h"
 #include "wav.h"
+#include "wav_dump_utils.h"
 
 #include "base_arena.c"
 #include "base_string.c"
 #include "base_io.c"
 #include "wav.c"
+#include "wav_dump_utils.c"
 
 #include <stdio.h>
 
@@ -53,22 +55,28 @@ int wmain(int argc, WCHAR** argv)
     BYTE*  data        = 0;
 
     // WAV globals
-    Arena wav_arena = {0};
+    Arena  wav_arena = {0};
     arena_alloc(&wav_arena, 4096);
 
-    char* fn = str_from_wstr_in_place(argv[1]);
-    String filename = STR_C(fn);
+    char* filename_cstr8 = str_from_wstr_in_place(argv[1]);
+    String wav_filename = STR_C(filename_cstr8);
+    String wav_file     = read_entire_file(wav_filename);
 
-    String          wav_file  = read_entire_file(filename);
-    Wav_Chunk_Node* wav_root = wav_chunks_from_file(&wav_arena, wav_file);
+    Wav wav = wav_from_data(&wav_arena, wav_file);
 
-    Wav_Chunk_Node* wav_fmt_node  = wav_chunk_from_id(wav_root, WAV_FOURCC(WAV_FORMAT_CHUNK_ID));
-    Wav_Chunk_Node* wav_data_node = wav_chunk_from_id(wav_root, WAV_FOURCC(WAV_DATA_CHUNK_ID));
+    Wav_Sub_Chunk_Node wav_fmt_node  = wav_sub_chunk_from_id(&wav.sub_chunks, WAV_FOURCC(WAV_FORMAT_CHUNK_ID));
+    Wav_Sub_Chunk_Node wav_data_node = wav_sub_chunk_from_id(&wav.sub_chunks, WAV_FOURCC(WAV_DATA_CHUNK_ID));
 
-    Wav_Format wav_fmt  = *(Wav_Format*)wav_fmt_node->data;
+    Wav_Format wav_fmt  = *(Wav_Format*)&wav_file.data[wav_fmt_node.data_offset];
+
+    String_Builder strb = {0};
+    arena_alloc(&strb.arena, 1024);
+
+    wav_dump_format(&wav_arena, &wav_fmt, 1, &strb);
+    printf("Input File %s Format:\n%.*s\n", wav_filename.data, strb.str.count, strb.str.data);
 
     u32 bytes_per_sample = wav_fmt.bits_per_sample / 8;
-    u32 num_samples      = wav_data_node->header->size / bytes_per_sample;
+    u32 num_samples      = wav_data_node.header.size / bytes_per_sample;
     u32 num_frames       = num_samples / wav_fmt.num_channels;
 
     f32 duration = (f32)num_frames / (f32)wav_fmt.sample_rate;
@@ -151,8 +159,8 @@ int wmain(int argc, WCHAR** argv)
     if (result >= 0 && data)
     {
         u8* dest = data;
-        u8* src  = wav_data_node->data;
-        for (u32 i = 0; i < wav_data_node->header->size; i += 1)
+        u8* src  = (u8*)&wav_file.data[wav_data_node.data_offset];
+        for (u32 i = 0; i < wav_data_node.header.size; i += 1)
         {
             *dest++ = *src++;
         }
@@ -222,13 +230,13 @@ char* str_from_wstr_in_place(WCHAR* wstr)
     while (*src)
     {
         char c = (char)*src++;
-        printf("%c", c);
+        // printf("%c", c);
         *dest++ = c;
     }
     *dest = 0;
 
-    printf("\n");
-    printf("%s\n", str);
+    // printf("\n");
+    // printf("%s\n", str);
 
     return str;
 }

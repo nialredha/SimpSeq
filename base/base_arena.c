@@ -9,6 +9,15 @@ void arena_alloc(Arena* arena, u32 size)
     }
 }
 
+void arena_realloc(Arena* arena, u32 new_size)
+{
+    arena->base = (u8*)realloc(arena->base, new_size);
+    if (arena->base != 0)
+    {
+        arena->size = new_size;
+    }
+}
+
 void arena_free(Arena* arena)
 {
     if (arena->base != 0)
@@ -37,10 +46,24 @@ void* arena_push(Arena* arena, u32 size)
     return result;
 }
 
-// temporary memory
-Temp_Arena temp_begin(Arena* arena)
+void* arena_resize(Arena* arena, void* ptr, u32 old_size, u32 new_size)
 {
-    Temp_Arena result = {0};
+    // memory must be the top allocation
+    assert((u8*)ptr + old_size == arena->base + arena->used);
+
+    // amount we are growing by must fit inside the arena
+    u32 grow_by = new_size - old_size;
+    assert(arena->used + grow_by <= arena->size);
+
+    arena->used += grow_by;
+
+    return ptr;
+}
+
+// temporary memory
+Arena_Temp arena_temp_begin(Arena* arena)
+{
+    Arena_Temp result = {0};
 
     result.arena = arena;
     result.used = arena->used;
@@ -48,8 +71,8 @@ Temp_Arena temp_begin(Arena* arena)
     return result;
 }
 
-void temp_end(Temp_Arena temp_arena)
+void arena_temp_end(Arena_Temp temp)
 {
-    assert(temp_arena.arena->used > temp_arena.used);
-    temp_arena.arena->used = temp_arena.used;
+    assert(temp.arena->used > temp.used);
+    temp.arena->used = temp.used;
 }
