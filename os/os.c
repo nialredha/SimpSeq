@@ -1,4 +1,4 @@
-static String read_entire_file(String filename)
+static String os_read_entire_file(String filename)
 {
     String result = {0};
 
@@ -32,7 +32,7 @@ static String read_entire_file(String filename)
     return result;
 }
 
-static bool write_entire_file(String filename, String content)
+static bool os_write_entire_file(String filename, String content)
 {
     bool success = true;
 

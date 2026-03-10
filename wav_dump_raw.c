@@ -1,13 +1,13 @@
 #include "base_core.h"
 #include "base_arena.h"
 #include "base_string.h"
-#include "base_io.h"
+#include "os.h"
 #include "wav.h"
 #include "wav_dump_utils.h"
 
 #include "base_arena.c"
 #include "base_string.c"
-#include "base_io.c"
+#include "os.c"
 #include "wav.c"
 #include "wav_dump_utils.c"
 
@@ -42,7 +42,7 @@ int main(int argc, char** argv)
 
     arena_alloc(&arena, 4096);
 
-    file_in = read_entire_file(filename_in);
+    file_in = os_read_entire_file(filename_in);
     if (file_in.data == 0)
     {
         fprintf(stderr, "Failed to read file %.*s!\n", filename_in.count, filename_in.data);
