@@ -95,8 +95,8 @@ typedef struct
     Wav_Format_Tag format_tag;
     u16            num_channels;
     u32            sample_rate;
-    u32            byte_rate;   // bytes per second - (samples_per_second * bytes_per_sample * num_channels)
-    u16            block_align; // bytes per frame  - (bytes_per_sample * num_channels)
+    u32            byte_rate;   // bytes per second -> (samples_per_second * bytes_per_sample * num_channels)
+    u16            block_align; // bytes per frame  -> (bytes_per_sample * num_channels)
     u16            bits_per_sample;
 
     // Extended Format (when format_tag == EXTENSIBLE && cb_size == 22)

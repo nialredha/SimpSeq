@@ -29,92 +29,117 @@
 #define REF_TIME_NANOSECONDS_PER_SECOND (1e9)
 #define REF_TIME_UNITS_PER_SECOND       (REF_TIME_NANOSECONDS_PER_SECOND * REF_TIME_UNITS_PER_NANOSECOND)
 
+typedef void (* Audio_Callback)(void* user_data, u32 num_frames_needed, void* output);
+
+typedef struct
+{
+    Wav_Format     desired_format;
+    Audio_Callback audio_callback;
+    void*          user_data;
+} Audio_Config;
+
 char* str_from_get_default_audio_endpoint_result(HRESULT result);
 char* str_from_str16_in_place(WCHAR* wstr);
 
 // globals
-IMMDeviceEnumerator* enumerator = 0;
-IMMDevice* device = 0;
 
-IAudioClient* audio_client = 0;
-WAVEFORMATEX* audio_format = 0;
+static IMMDeviceEnumerator* enumerator = 0;
+static IMMDevice*           device     = 0;
 
-IAudioRenderClient* render_client = 0;
+static IAudioClient* audio_client = 0;
+static WAVEFORMATEX* audio_format = 0;
 
-HANDLE event_handle;
+static IAudioRenderClient* render_client = 0;
 
-s32 os_win32_audio_init(void)
+static HANDLE event_handle;
+
+static Audio_Config audio_config;
+
+s32 os_win32_audio_init(Audio_Config* config)
 {
     HRESULT result = -1;
 
-    f32 duration = 1.0; // TODO[nr] @tbd
+    f32 duration = 1.0; // TODO[nr] @temp
 
     // initialize the COM library
     result = CoInitializeEx(0, COINIT_MULTITHREADED);
-    printf("CoInitializeEx Result : %d\n", result);
 
     // create enumerator object on the local system
     if (result >= 0)
     {
         result = CoCreateInstance(__uuidof(MMDeviceEnumerator), 0, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&enumerator);
-        printf("CoCreateInstance Result : %d\n", result);
     }
 
     // get default device for renderering audio
-    if (result >= 0)
+    if (result >= 0 && enumerator != 0)
     {
-        // TODO[nr] @improve: only supporting default
+        // TODO[nr] @better: only supporting default
         result = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
-        printf("GetDefaultAudioEndpoint Result : %s\n", str_from_get_default_audio_endpoint_result(result));
-
-        result = enumerator->Release();
-        printf("Release Result : %d\n", result);
+        enumerator->Release(); // TODO[nr] @study: should we release this or hold onto it?
     }
     
     // get audio client
     if (result >= 0 && device)
     {
         result = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, 0, (void**)&audio_client);
-        printf("Device Activate Result : %d\n", result);
     }
 
     // initialize audio_client and get audio render client service
     if (result >= 0 && audio_client)
     {
         result = audio_client->GetMixFormat(&audio_format);
-        printf("Render Client GetMixFormat Result : %d\n", result);
-
-        String fmt_tag = wav_string_from_format_tag(audio_format->wFormatTag);
-
-        printf("\n");
-        printf("Mix format:\n");
-        printf("======================================\n");
-        printf("  Format Tag          : %.*s\n", fmt_tag.count, fmt_tag.data);
-        printf("  Channels            : %d\n",   audio_format->nChannels);
-        printf("  Samples Per Second  : %d\n",   audio_format->nSamplesPerSec);
-        printf("  Bytes Per Second    : %d\n",   audio_format->nAvgBytesPerSec);
-        printf("  Block Align         : %d\n",   audio_format->nBlockAlign);
-        printf("  Bits Per Sample     : %d\n",   audio_format->wBitsPerSample);
-        printf("  CB Size             : %d\n",   audio_format->cbSize);
-
-        if (audio_format->wFormatTag == Wav_Format_Tag_EXTENSIBLE)
-        {
-            WAVEFORMATEXTENSIBLE* audio_format_ext = (WAVEFORMATEXTENSIBLE*)audio_format;
-            String sub_fmt_tag = wav_string_from_format_tag(audio_format_ext->SubFormat.Data1 & 0xFFFF);
-
-            printf("  Valid Bits Per Samp : %d\n",     audio_format_ext->Samples.wValidBitsPerSample);
-            printf("  Channel Mask        : 0x%02X\n", audio_format_ext->dwChannelMask);
-            printf("  Sub Format Tag      : %.*s\n",   sub_fmt_tag.count, sub_fmt_tag.data);
-        }
-        printf("\n");
-
-        REFERENCE_TIME buffer_duration = (REFERENCE_TIME)(duration * REF_TIME_UNITS_PER_SECOND);
-        printf("Requested Buffer Duration : %f * %f = %llu\n", duration, REF_TIME_UNITS_PER_SECOND, buffer_duration);
 
         if (result >= 0)
         {
-            result = audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, buffer_duration, 0, audio_format, 0);
-            printf("Initialize Result : %d\n", result);
+            String fmt_tag = wav_string_from_format_tag(audio_format->wFormatTag);
+
+            printf("\n");
+            printf("Mix format:\n");
+            printf("======================================\n");
+            printf("  Format Tag          : %.*s\n", fmt_tag.count, fmt_tag.data);
+            printf("  Channels            : %d\n",   audio_format->nChannels);
+            printf("  Samples Per Second  : %d\n",   audio_format->nSamplesPerSec);
+            printf("  Bytes Per Second    : %d\n",   audio_format->nAvgBytesPerSec);
+            printf("  Block Align         : %d\n",   audio_format->nBlockAlign);
+            printf("  Bits Per Sample     : %d\n",   audio_format->wBitsPerSample);
+            printf("  CB Size             : %d\n",   audio_format->cbSize);
+
+            if (audio_format->wFormatTag == Wav_Format_Tag_EXTENSIBLE)
+            {
+                WAVEFORMATEXTENSIBLE* audio_format_ext = (WAVEFORMATEXTENSIBLE*)audio_format;
+                String sub_fmt_tag = wav_string_from_format_tag(audio_format_ext->SubFormat.Data1 & 0xFFFF);
+
+                printf("  Valid Bits Per Samp : %d\n",     audio_format_ext->Samples.wValidBitsPerSample);
+                printf("  Channel Mask        : 0x%02X\n", audio_format_ext->dwChannelMask);
+                printf("  Sub Format Tag      : %.*s\n",   sub_fmt_tag.count, sub_fmt_tag.data);
+            }
+            printf("\n");
+
+            REFERENCE_TIME buffer_duration = (REFERENCE_TIME)(duration * REF_TIME_UNITS_PER_SECOND);
+            printf("Requested Buffer Duration : %f * %f = %llu\n", duration, REF_TIME_UNITS_PER_SECOND, buffer_duration);
+
+            if (audio_format->wFormatTag == Wav_Format_Tag_EXTENSIBLE)
+            {
+                WAVEFORMATEXTENSIBLE* audio_format_ext = (WAVEFORMATEXTENSIBLE*)audio_format;
+
+                // TODO[nr] @study: leave channel mask the same?
+                audio_format_ext->Samples.wValidBitsPerSample = config->desired_format.bits_per_sample;
+                audio_format_ext->SubFormat.Data1 = (audio_format_ext->SubFormat.Data1 & (0xFFFF0000)) | (config->desired_format.format_tag & (0x0000FFFF));
+            }
+            else
+            {
+                audio_format->wFormatTag = config->desired_format.format_tag;
+            }
+
+            audio_format->nChannels       = config->desired_format.num_channels;
+            audio_format->nSamplesPerSec  = config->desired_format.sample_rate;
+            audio_format->nBlockAlign     = (config->desired_format.bits_per_sample / 8) * config->desired_format.num_channels;
+
+            audio_format->nAvgBytesPerSec = audio_format->nSamplesPerSec * audio_format->nBlockAlign;
+            audio_format->wBitsPerSample  = config->desired_format.bits_per_sample;
+
+            // TODO[nr] @study: AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+            result = audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, buffer_duration, 0, audio_format, 0);
         }
     }
 
@@ -123,17 +148,21 @@ s32 os_win32_audio_init(void)
     {
         event_handle = CreateEvent(0, 0, 0, 0);
         result = audio_client->SetEventHandle(event_handle);
-        printf("Set Event Handle Result : %d\n", result);
     }
 
     // get render client
     if (result >= 0)
     {
         result = audio_client->GetService(__uuidof(IAudioRenderClient), (void**)&render_client);
-        printf("Get Service Result : %d\n", result);
     }
 
-    return result;
+    // save callback and user data
+    if (result >= 0)
+    {
+        audio_config = *config;
+    }
+
+    return (s32)result;
 }
 
 s32 os_win32_audio_start(void)
@@ -145,7 +174,7 @@ s32 os_win32_audio_start(void)
         result = audio_client->Start();
     }
 
-    return result;
+    return (s32)result;
 }
 
 s32 os_win32_audio_stop(void)
@@ -162,10 +191,10 @@ s32 os_win32_audio_stop(void)
         result = audio_client->Reset();
     }
 
-    return result;
+    return (s32)result;
 }
 
-s32 os_win32_audio_deinit(void)
+void os_win32_audio_deinit(void)
 {
 #define WIN32_RELEASE_POINTER(p) do { if (p != 0) { (p)->Release(); (p) = 0; } } while (0)
 #define WIN32_RELEASE_HANDLE(h)  do { if (h != 0) { CloseHandle(h); (h) = 0; } } while (0)
@@ -183,7 +212,42 @@ s32 os_win32_audio_deinit(void)
 #undef WIN32_RELEASE_HANDLE
 #undef WIN32_FREE
 
-    return 0;
+    return;
+}
+
+typedef struct
+{
+    Wav_Format format;
+    u32        playhead;
+    u32        size;
+    u8*        data;
+} User_Data;
+
+void audio_callback(void* user_data, u32 num_frames_needed, void* output)
+{
+    User_Data* ud   = (User_Data*)user_data;
+
+    // f32* src  = (f32*)&ud->data[ud->playhead];
+    // f32* dest = (f32*)output;
+
+    u8* src  = (u8*)&ud->data[ud->playhead];
+    u8* dest = (u8*)output;
+
+    u32 num_bytes_needed = (num_frames_needed * ud->format.num_channels) * (ud->format.bits_per_sample / 8);
+
+    for (u32 byte_index = 0; byte_index < num_bytes_needed; ++byte_index)
+    // for (u32 sample_playhead = 0; sample_playhead < num_frames_needed * ud->format.num_channels; sample_playhead += 1)
+    {
+        if (ud->playhead + byte_index < ud->size) 
+        {
+            *dest++ = *src++;
+            ud->playhead += sizeof(*dest);
+        }
+        else
+        {
+            *dest++ = 0;
+        }
+    }
 }
 
 int wmain(int argc, WCHAR** argv)
@@ -216,93 +280,55 @@ int wmain(int argc, WCHAR** argv)
     arena_alloc(&strb.arena, 1024);
 
     wav_dump_format(&wav_arena, &wav_fmt, 1, &strb);
-    printf("Input File %s Format:\n%.*s\n", wav_filename.data, strb.str.count, strb.str.data);
+    printf("Input File %s:\n%.*s\n", wav_filename.data, strb.str.count, strb.str.data);
 
     u32 bytes_per_sample = wav_fmt.bits_per_sample / 8;
     u32 num_samples      = wav_data_node.header.size / bytes_per_sample;
     u32 num_frames       = num_samples / wav_fmt.num_channels;
 
-    f32 duration = (f32)num_frames / (f32)wav_fmt.sample_rate;
-    u32 byte_playhead = 0;
-
     BYTE* data = 0;
-    f32* dest = 0;
-    f32* src  = (f32*)&wav_file.data[wav_data_node.data_offset];
 
-    HRESULT result = 0;
+    User_Data ud = { wav_fmt, 0, wav_data_node.header.size, (u8*)&wav_file.data[wav_data_node.data_offset] };
+    Audio_Config config = { wav_fmt, audio_callback, &ud };
 
-    result = os_win32_audio_init();
+    HRESULT result = os_win32_audio_init(&config);
 
-    // get render buffer
-    if (result >= 0 && render_client)
+    if (result >= 0)
     {
-        result = audio_client->GetBufferSize(&frame_count);
-        printf("Get Buffer Size Result: %d, Value: %u\n", result, frame_count);
-
-        result = render_client->GetBuffer(frame_count, &data);
-        printf("Get Buffer Result: %d, %d\n", result, frame_count);
-    }
-
-    // render audio
-    if (result >= 0 && data)
-    {
-        dest = (f32*)data;
-        for (u32 sample_playhead = 0; sample_playhead < frame_count * audio_format->nChannels; sample_playhead += 1)
-        {
-            if (byte_playhead > wav_data_node.header.size) 
-            {
-                fprintf(stderr, "ERROR: Uh Oh! Ran out of data...\n");
-                return 1;
-            }
-
-            *dest++ = *src++;
-            byte_playhead += sizeof(f32);
-        }
-
-        render_client->ReleaseBuffer(frame_count, 0);
-
         result = os_win32_audio_start();
-        printf("Start Result: %d\n", result);
     }
 
-    while (byte_playhead < wav_data_node.header.size)
+    if (result >= 0)
     {
-        WaitForSingleObject(event_handle, INFINITE);
+        audio_client->GetBufferSize(&frame_count);
 
-        UINT32 frame_padding = 0;
-        result = audio_client->GetCurrentPadding(&frame_padding);
-
-        if (result < 0)
+        while (true)
         {
-            fprintf(stderr, "ERROR: GetCurrentPadding failed with code: %d\n", result);
-            break;
-        }
+            WaitForSingleObject(event_handle, INFINITE);
 
-        UINT32 frames_available = frame_count - frame_padding;
+            UINT32 frame_padding = 0;
+            result = audio_client->GetCurrentPadding(&frame_padding);
 
-        data = 0;
-        result = render_client->GetBuffer(frames_available, &data);
-        if (result < 0)
-        {
-            fprintf(stderr, "ERROR: GetBuffer failed with code: %d\n", result);
-            break;
-        }
-
-        dest = (f32*)data;
-
-        for (u32 sample_playhead = 0; sample_playhead < frames_available * audio_format->nChannels; sample_playhead += 1)
-        {
-            if (byte_playhead > wav_data_node.header.size) 
+            if (result < 0)
             {
-                fprintf(stderr, "ERROR: Uh Oh! Ran out of data...\n");
+                fprintf(stderr, "ERROR: GetCurrentPadding failed with code: %d\n", result);
                 break;
             }
 
-            *dest++ = *src++;
-            byte_playhead += sizeof(f32);
-        }
+            UINT32 frames_available = frame_count - frame_padding;
 
-        render_client->ReleaseBuffer(frames_available, 0);
+            data = 0;
+            result = render_client->GetBuffer(frames_available, &data);
+            if (result < 0)
+            {
+                fprintf(stderr, "ERROR: GetBuffer failed with code: %d\n", result);
+                break;
+            }
+
+            audio_config.audio_callback(audio_config.user_data, frames_available, data);
+
+            render_client->ReleaseBuffer(frames_available, 0);
+        }
     }
 
     // wait until audio is rendered
@@ -324,16 +350,9 @@ int wmain(int argc, WCHAR** argv)
     }
 
     // stop playing device
-    if (result >= 0)
-    { 
-        result = os_win32_audio_stop();
-    }
+    result = os_win32_audio_stop();
 
-    // destroy the device
-    if (result >= 0)
-    { 
-        result = os_win32_audio_deinit();
-    }
+    os_win32_audio_deinit();
 
     return result;
 }

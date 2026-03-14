@@ -52,12 +52,14 @@ void wav_dump_format(Arena* arena, Wav_Format* format, u32 level, String_Builder
 
     strb_append(out, 
                 str_format(arena, 
+                           "%*sFormat {\n"
                            "%*sformat tag    = %.*s,\n" 
                            "%*snum channels  = %u,\n"
                            "%*ssample rate   = %u,\n"
                            "%*sbyte rate     = %u,\n"
                            "%*sblock align   = %u,\n"
                            "%*sbits per samp = %u\n",
+                           indent_0, "",
                            indent_1, "", fmt_tag.count, fmt_tag.data,
                            indent_1, "", format->num_channels,
                            indent_1, "", format->sample_rate,
