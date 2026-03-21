@@ -8,30 +8,23 @@
 #include "base_core.h"
 #include "base_arena.h"
 #include "base_string.h"
-#include "os.h"
+#include "base_ring_buffer.h"
+
 #include "wav.h"
 #include "wav_dump_utils.h"
 
+#include "os.h"
+#include "os_win32.h"
+
 #include "base_arena.c"
 #include "base_string.c"
-#include "os.c"
+#include "base_ring_buffer.c"
+
 #include "wav.c"
 #include "wav_dump_utils.c"
 
-#include <stdio.h>
-
-#include <windows.h>
-
-#define INITGUID
-#include <initguid.h>
-#include <mmdeviceapi.h> // enumerate/activate audio endpoints
-
-#include <audioclient.h> // WASAPI interfaces
-
-#include "os_audio_win32.h"
-#include "os_audio_win32.c"
-
-char* str_from_str16_in_place(WCHAR* wstr);
+#include "os.c"
+#include "os_win32.c"
 
 typedef struct
 {
@@ -43,10 +36,7 @@ typedef struct
 
 void audio_callback(void* user_data, u32 num_frames_needed, void* output)
 {
-    User_Data* ud   = (User_Data*)user_data;
-
-    // f32* src  = (f32*)&ud->data[ud->playhead];
-    // f32* dest = (f32*)output;
+    User_Data* ud = (User_Data*)user_data;
 
     u8* src  = (u8*)&ud->data[ud->playhead];
     u8* dest = (u8*)output;
@@ -54,7 +44,6 @@ void audio_callback(void* user_data, u32 num_frames_needed, void* output)
     u32 num_bytes_needed = (num_frames_needed * ud->format.num_channels) * (ud->format.bits_per_sample / 8);
 
     for (u32 byte_index = 0; byte_index < num_bytes_needed; ++byte_index)
-    // for (u32 sample_playhead = 0; sample_playhead < num_frames_needed * ud->format.num_channels; sample_playhead += 1)
     {
         if (ud->playhead + byte_index < ud->size) 
         {
@@ -68,11 +57,11 @@ void audio_callback(void* user_data, u32 num_frames_needed, void* output)
     }
 }
 
-int wmain(int argc, WCHAR** argv)
+s32 main2(s32 arg_count, char** args)
 {
-    if (argc != 2)
+    if (arg_count != 2)
     {
-        printf("%d is not enough arguments!\n Example usage: .\\%s test.wav\n", argc, str_from_str16_in_place(argv[0]));
+        printf("%d is not enough arguments!\n Example usage: .\\%s test.wav\n", arg_count, args[0]);
         return 1;
     }
 
@@ -80,7 +69,7 @@ int wmain(int argc, WCHAR** argv)
     Arena  wav_arena = {0};
     arena_alloc(&wav_arena, 4096);
 
-    char* filename_cstr8 = str_from_str16_in_place(argv[1]);
+    char* filename_cstr8 = args[1];
     String wav_filename  = STR_C(filename_cstr8);
     String wav_file      = os_read_entire_file(wav_filename);
 
@@ -118,8 +107,11 @@ int wmain(int argc, WCHAR** argv)
         return result;
     }
 
-    // wait for audio playback thread to complete
-    WaitForSingleObject(device.audio_thread, INFINITE);
+    while (user_data.playhead < user_data.size) 
+    {
+        // do nothing
+        os_sleep_ms(100);
+    }
 
     // stop playing device
     result = os_win32_audio_stop(&device);
@@ -132,25 +124,4 @@ int wmain(int argc, WCHAR** argv)
     os_win32_audio_deinit(&device);
 
     return 0;
-}
-
-char* str_from_str16_in_place(WCHAR* wstr)
-{
-    char* str = (char*)wstr;
-
-    WCHAR* src  = wstr;
-    char*  dest = str;
-
-    while (*src)
-    {
-        char c = (char)*src++;
-        // printf("%c", c);
-        *dest++ = c;
-    }
-    *dest = 0;
-
-    // printf("\n");
-    // printf("%s\n", str);
-
-    return str;
 }

@@ -17,5 +17,5 @@ cl %cl_includes% ..\wav_dump_with_data.c %cl_flags% /link /out:"wav_dump_with_da
 REM WAV Dump Raw
 cl %cl_includes% ..\wav_dump_raw.c %cl_flags% /link /out:"wav_dump_raw.exe"
 
-REM WAV Play WIN32
-cl %cl_includes% ..\wav_play_win32.c %cl_flags% /link ole32.lib /out:"wav_play_win32.exe"
+REM WAV Play
+cl %cl_includes% ..\wav_play.c %cl_flags% /link ole32.lib /out:"wav_play.exe"

@@ -1,3 +1,9 @@
+void os_sleep_ms(u32 milliseconds)
+{
+    Sleep(milliseconds);
+    return;
+}
+
 static u32 audio_playback_thread(void* param);
 
 s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
@@ -78,9 +84,23 @@ s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
             {
                 WAVEFORMATEXTENSIBLE* audio_format_ext = (WAVEFORMATEXTENSIBLE*)audio_format;
 
-                // TODO[nr] @study: leave channel mask the same?
-                audio_format_ext->Samples.wValidBitsPerSample = config->desired_format.bits_per_sample;
-                audio_format_ext->SubFormat.Data1 = (audio_format_ext->SubFormat.Data1 & (0xFFFF0000)) | (config->desired_format.format_tag & (0x0000FFFF));
+                if (config->desired_format.format_tag != Wav_Format_Tag_EXTENSIBLE)
+                {
+                    // TODO[nr] @study: leave channel mask the same?
+                    audio_format_ext->Samples.wValidBitsPerSample = config->desired_format.bits_per_sample;
+                    audio_format_ext->SubFormat.Data1 = (audio_format_ext->SubFormat.Data1 & (0xFFFF0000)) | (config->desired_format.format_tag & (0x0000FFFF));
+                }
+                else
+                {
+                    audio_format_ext->Samples.wValidBitsPerSample = config->desired_format.valid_bits_per_sample;
+                    audio_format_ext->dwChannelMask = config->desired_format.channel_mask;
+
+                    u8* subformat_dest = (u8*)&audio_format_ext->SubFormat; 
+                    for (u32 i = 0; i < sizeof(config->desired_format.sub_format); ++i)
+                    {
+                        *subformat_dest++ = config->desired_format.sub_format[i];
+                    }
+                }
             }
             else
             {
@@ -171,6 +191,29 @@ s32 os_win32_audio_stop(OS_Audio_Device* device)
     return (s32)result;
 }
 
+void os_win32_audio_deinit(OS_Audio_Device* device)
+{
+#define WIN32_RELEASE_POINTER(p) do { if (p != 0) { (p)->lpVtbl->Release(p); (p) = 0; } } while (0)
+#define WIN32_RELEASE_HANDLE(h)  do { if (h != 0) { CloseHandle(h); (h) = 0; } } while (0)
+#define WIN32_FREE(p)            do { if (p != 0) { CoTaskMemFree(p); } } while (0)
+    
+    if (device != 0)
+    {
+        WIN32_RELEASE_POINTER(device->audio_client);
+        WIN32_RELEASE_POINTER(device->render_client);
+
+        WIN32_FREE(device->audio_format);
+
+        WIN32_RELEASE_HANDLE(device->event_handle);
+    }
+
+#undef WIN32_RELEASE_POINTER
+#undef WIN32_RELEASE_HANDLE
+#undef WIN32_FREE
+
+    return;
+}
+
 u32 audio_playback_thread(void* param)
 {
     OS_Audio_Device* device = (OS_Audio_Device*)param;
@@ -181,8 +224,6 @@ u32 audio_playback_thread(void* param)
 
     UINT32 frame_count = 0;
     audio_client->lpVtbl->GetBufferSize(audio_client, &frame_count);
-
-    printf("device->quit = %u\n", device->quit);
 
     while (!device->quit)
     {
@@ -214,26 +255,40 @@ u32 audio_playback_thread(void* param)
     return 0;
 }
 
-void os_win32_audio_deinit(OS_Audio_Device* device)
+static char* str_from_str16_in_place(WCHAR* wstr);
+
+int wmain(int argc, WCHAR** argv)
 {
-#define WIN32_RELEASE_POINTER(p) do { if (p != 0) { (p)->lpVtbl->Release(p); (p) = 0; } } while (0)
-#define WIN32_RELEASE_HANDLE(h)  do { if (h != 0) { CloseHandle(h); (h) = 0; } } while (0)
-#define WIN32_FREE(p)            do { if (p != 0) { CoTaskMemFree(p); } } while (0)
-    
-    if (device != 0)
+    for (s32 arg_index = 0; arg_index < argc; ++arg_index)
     {
-        WIN32_RELEASE_POINTER(device->audio_client);
-        WIN32_RELEASE_POINTER(device->render_client);
-
-        WIN32_FREE(device->audio_format);
-
-        WIN32_RELEASE_HANDLE(device->event_handle);
+        str_from_str16_in_place(argv[arg_index]);
     }
 
-#undef WIN32_RELEASE_POINTER
-#undef WIN32_RELEASE_HANDLE
-#undef WIN32_FREE
+    s32 arg_count = argc;
+    char** args   = (char**)argv;
 
-    return;
+    s32 result = main2(arg_count, args);
+
+    return result;
 }
 
+char* str_from_str16_in_place(WCHAR* wstr)
+{
+    char* str = (char*)wstr;
+
+    WCHAR* src  = wstr;
+    char*  dest = str;
+
+    while (*src)
+    {
+        char c = (char)*src++;
+        // printf("%c", c);
+        *dest++ = c;
+    }
+    *dest = 0;
+
+    // printf("\n");
+    // printf("%s\n", str);
+
+    return str;
+}

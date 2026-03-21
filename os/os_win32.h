@@ -1,3 +1,36 @@
+#ifndef OS_WIN32_H
+#define OS_WIN32_H
+
+#include <windows.h>
+
+//
+// intrinsics
+//
+
+#include <winnt.h>
+
+inline s32 os_win32_atomic_add_s32(LONG* volatile value, s32 addend)
+{
+    s32 result = _InterlockedExchangeAdd(value, addend);
+    return result;
+}
+
+inline s64 os_win32_atomic_add_s64(s64* volatile value, s64 addend)
+{
+    s64 result = _InterlockedExchangeAdd64(value, addend);
+    return result;
+}
+
+//
+// audio
+//
+
+#define INITGUID
+#include <initguid.h>
+#include <mmdeviceapi.h> // enumerate/activate audio endpoints
+
+#include <audioclient.h> // WASAPI interfaces
+
 // BCDE0395-E52F-467C-8E3D-C4579291692E
 DEFINE_GUID(IID_MMDeviceEnumerator, 0xBCDE0395, 0xE52F, 0x467C, 0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E);
 // A95664D2-9614-4F35-A746-DE8DB63617E6
@@ -39,3 +72,5 @@ s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config);
 s32 os_win32_audio_start(OS_Audio_Device* device);
 s32 os_win32_audio_stop(OS_Audio_Device* device);
 void os_win32_audio_deinit(OS_Audio_Device* device);
+
+#endif // OS_WIN32_H
