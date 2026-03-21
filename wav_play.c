@@ -28,33 +28,19 @@
 
 typedef struct
 {
-    Wav_Format format;
-    u32        playhead;
-    u32        size;
-    u8*        data;
+    Wav_Format*  fmt;
+    Ring_Buffer* rb;
 } User_Data;
 
 void audio_callback(void* user_data, u32 num_frames_needed, void* output)
 {
     User_Data* ud = (User_Data*)user_data;
 
-    u8* src  = (u8*)&ud->data[ud->playhead];
-    u8* dest = (u8*)output;
+    Wav_Format*  fmt = ud->fmt;
+    Ring_Buffer* rb  = ud->rb;
 
-    u32 num_bytes_needed = (num_frames_needed * ud->format.num_channels) * (ud->format.bits_per_sample / 8);
-
-    for (u32 byte_index = 0; byte_index < num_bytes_needed; ++byte_index)
-    {
-        if (ud->playhead + byte_index < ud->size) 
-        {
-            *dest++ = *src++;
-            ud->playhead += sizeof(*dest);
-        }
-        else
-        {
-            *dest++ = 0;
-        }
-    }
+    u32 bytes_needed  = (num_frames_needed * fmt->num_channels) * (fmt->bits_per_sample / 8);
+    rb_read(rb, (u8*)output, bytes_needed);
 }
 
 s32 main2(s32 arg_count, char** args)
@@ -89,7 +75,13 @@ s32 main2(s32 arg_count, char** args)
 
     OS_Audio_Device device = {0};
 
-    User_Data    user_data = { wav_fmt, 0, wav_data_node.header.size, (u8*)&wav_file.data[wav_data_node.data_offset] };
+    f32 seconds_per_loop = 1;
+    u32 samples_per_loop = (u32)((seconds_per_loop * (f32)wav_fmt.sample_rate) * (f32)wav_fmt.num_channels);
+    u32 bytes_per_loop   = samples_per_loop * (wav_fmt.bits_per_sample / 8);
+
+    Ring_Buffer rb = rb_create(bytes_per_loop*2);
+
+    User_Data    user_data = { &wav_fmt, &rb };
     OS_Audio_Config config = { wav_fmt, audio_callback, &user_data };
 
     HRESULT result = 0;
@@ -100,17 +92,42 @@ s32 main2(s32 arg_count, char** args)
         return result;
     }
 
+    u8* src          = (u8*)&wav_file.data[wav_data_node.data_offset];
+    u32 src_size     = wav_data_node.header.size;
+    u32 src_playhead = 0;
+
+    // preload
+    {
+        u32 bytes_written = rb_write(&rb, &src[src_playhead], bytes_per_loop);
+        src_playhead += bytes_written;
+    }
+
     result = os_win32_audio_start(&device);
     if (result < 0)
     {
         fprintf(stderr, "ERROR: failed to start audio client!\n");
         return result;
     }
+    
+    u32 time_ms = (u32)(1000.0 * (seconds_per_loop / 2.0));
 
-    while (user_data.playhead < user_data.size) 
+    while (src_playhead < src_size) 
     {
-        // do nothing
-        os_sleep_ms(100);
+        u32 bytes_to_write = 0; 
+
+        if (src_playhead + bytes_per_loop < src_size)
+        {
+            bytes_to_write = bytes_per_loop;
+        }
+        else
+        {
+            bytes_to_write = src_size - src_playhead;
+        }
+
+        u32 bytes_written = rb_write(&rb, &src[src_playhead], bytes_to_write);
+        src_playhead += bytes_written;
+
+        os_sleep_ms(time_ms);
     }
 
     // stop playing device
