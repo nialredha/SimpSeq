@@ -72,7 +72,7 @@ s32 main2(s32 arg_count, char** args)
 
     OS_Audio_Device device = {0};
 
-    f32 seconds_per_loop = 1.0f;
+    f32 seconds_per_loop = 0.1f;
     u32 samples_per_loop = (u32)((seconds_per_loop * (f32)wav_fmt.sample_rate) * (f32)wav_fmt.num_channels);
     u32 bytes_per_loop   = samples_per_loop * (wav_fmt.bits_per_sample / 8);
 
@@ -106,8 +106,6 @@ s32 main2(s32 arg_count, char** args)
         return result;
     }
     
-    // u32 time_ms = (u32)(1000.0 * (seconds_per_loop / 2.0));
-
     while (src_playhead < src_size) 
     {
         u32 bytes_to_write = 0; 
@@ -123,8 +121,6 @@ s32 main2(s32 arg_count, char** args)
 
         u32 bytes_written = rb_write(&rb, &src[src_playhead], bytes_to_write);
         src_playhead += bytes_written;
-
-        // os_sleep_ms(time_ms);
     }
 
     // stop playing device

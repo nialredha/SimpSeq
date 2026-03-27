@@ -1,3 +1,5 @@
+#define DEFAULT_BUFFER_SIZE_IN_SECONDS (0.1f)
+
 void os_sleep_ms(u32 milliseconds)
 {
     Sleep(milliseconds);
@@ -19,8 +21,6 @@ s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
     HANDLE event_handle = 0;
 
     HRESULT result = -1;
-
-    f32 duration = 1.0; // TODO[nr] @temp
 
     // initialize the COM library
     result = CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -77,8 +77,8 @@ s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
             }
             printf("\n");
 
-            REFERENCE_TIME buffer_duration = (REFERENCE_TIME)(duration * REF_TIME_UNITS_PER_SECOND);
-            printf("Requested Buffer Duration : %f * %f = %llu\n", duration, REF_TIME_UNITS_PER_SECOND, buffer_duration);
+            REFERENCE_TIME buffer_duration = (REFERENCE_TIME)(DEFAULT_BUFFER_SIZE_IN_SECONDS * REF_TIME_UNITS_PER_SECOND);
+            printf("Requested Buffer Duration : %f * %f = %llu\n", DEFAULT_BUFFER_SIZE_IN_SECONDS, REF_TIME_UNITS_PER_SECOND, buffer_duration);
 
             if (audio_format->wFormatTag == Wav_Format_Tag_EXTENSIBLE)
             {

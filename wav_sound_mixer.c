@@ -81,6 +81,8 @@ typedef struct
 
     Sound_Asset_Pool    asset_pool;
     Sound_Instance_Pool instance_pool;
+
+    float mix_buffer[9600]; // TODO[nr] @better: assuming 100ms 48KHz stereo 
 } Sound_System;
 
 bool sound_asset_is_valid(Sound_Asset_Pool* pool, u32 slot_id)
@@ -133,7 +135,6 @@ u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
     {
         Sound_Asset_Slot* slot = &pool->slot[slot_id];
 
-        // TODO[nr] @probably: zero out all the other members of the struct
         slot->filename = filename;
 
         slot->prev = pool->last_slot;
@@ -294,8 +295,11 @@ u32 sound_instance_add(Sound_Instance_Pool* pool, u32 asset_id)
     {
         Sound_Instance_Slot* slot = &pool->slot[slot_id];
 
-        // TODO[nr] @probably: zero out all the other members of the struct
         slot->asset_id = asset_id;
+        slot->playhead = 0;
+        slot->volume   = 0;
+        slot->pan      = 0;
+        slot->pitch    = 0;
 
         slot->prev = pool->last_slot;
         slot->next = 0;
@@ -380,38 +384,80 @@ Sound_Instance_Slot* sound_instance_get(Sound_Instance_Pool* pool, u32 slot_id)
     return result;
 }
 
-void ss_init(Sound_System* sound_system)
+void ss_init(Sound_System* ss)
 {
     // why am I doing this - not sure.
-    u8* dest = (u8*)sound_system;
-    for (u32 byte_index = 0; byte_index < sizeof(*sound_system); byte_index++)
+    u8* dest = (u8*)ss;
+    for (u32 byte_index = 0; byte_index < sizeof(*ss); byte_index++)
     {
         *dest++ = 0;
     }
 
-    arena_alloc(&sound_system->perm_arena, 4*1024*1024);
-    arena_alloc(&sound_system->tran_arena, 4*1024);
+    arena_alloc(&ss->perm_arena, 4*1024*1024);
+    arena_alloc(&ss->tran_arena, 4*1024);
 
     return;
 }
 
-u32 ss_play_sound(Sound_System* sound_system, u32 asset_id)
+u32 ss_play_sound(Sound_System* ss, u32 asset_id)
 {
     u32 instance_id = 0;
 
-    Sound_Asset_Slot* asset = sound_asset_find_or_load(&sound_system->perm_arena, &sound_system->asset_pool, asset_id);
+    Sound_Asset_Slot* asset = sound_asset_find_or_load(&ss->perm_arena, &ss->asset_pool, asset_id);
 
     if (asset->data.buffer != 0)
     {
-        instance_id = sound_instance_add(&sound_system->instance_pool, asset_id);
+        instance_id = sound_instance_add(&ss->instance_pool, asset_id);
     }
 
     return instance_id;
 }
 
-void ss_stop_sound(Sound_System* sound_system, u32 instance_id)
+void ss_stop_sound(Sound_System* ss, u32 instance_id)
 {
-    sound_instance_rem(&sound_system->instance_pool, instance_id);
+    sound_instance_rem(&ss->instance_pool, instance_id);
+
+    return;
+}
+
+void ss_mix(Sound_System* ss, Ring_Buffer* out)
+{
+    u8* mix_buffer = (u8*)ss->mix_buffer;
+#if 0
+    for (u32 sound_id = ss->instance_pool.first_slot;
+         sound_id != 0;
+         sound_id = sound_instance_get(&ss->instance_pool, sound_id)->next)
+
+#else
+    u32 sound_id = ss->instance_pool.first_slot;
+    if (sound_id)
+#endif
+    {
+        Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
+        Sound_Asset_Slot*    asset = sound_asset_get(&ss->asset_pool, sound->asset_id);
+
+        u32 amount_to_mix = 9600*4;
+        u32 amount_needed = (u32)out->amount_free;
+        u32 amount_mixed  = 0;
+
+        amount_to_mix = amount_needed < amount_to_mix ? amount_needed : amount_to_mix;
+
+        for (u32 mix_index = 0; mix_index < amount_to_mix; ++mix_index)
+        {
+            if (sound->playhead < asset->data.size)
+            {
+                *mix_buffer++ = asset->data.buffer[sound->playhead++];
+                amount_mixed++;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        u32 amount_written = rb_write(out, (u8*)ss->mix_buffer, amount_mixed);
+        assert(amount_written == amount_mixed);
+    }
 
     return;
 }
@@ -435,43 +481,52 @@ s32 main2(s32 arg_count, char** args)
     (void)arg_count;
     (void)args;
 
-    Arena arena = {0};
-    arena_alloc(&arena, 4*1024*1024);
-
     Sound_System ss = {0};
     ss_init(&ss);
 
-    u32 kick_aid = sound_asset_add(&ss.asset_pool, STR_LIT("808k_f32.wav"));
     u32 atwl_aid = sound_asset_add(&ss.asset_pool, STR_LIT("atwl_f32.wav"));
+    // u32 atwl_iid = ss_play_sound(&ss, atwl_aid);
+    ss_play_sound(&ss, atwl_aid);
 
-    printf("kick_aid = %u, atwl_aid = %u\n", kick_aid, atwl_aid);
+    OS_Audio_Device device = {0};
+    Ring_Buffer rb = rb_create(9600*4); // TODO[nr] @better
 
-    u32 kick_iid = ss_play_sound(&ss, kick_aid);
-    u32 atwl_iid = ss_play_sound(&ss, atwl_aid);
+    Sound_Asset_Slot* atwl = sound_asset_get(&ss.asset_pool, atwl_aid);
 
-    printf("kick_iid = %u, atwl_iid = %u\n", kick_iid, atwl_iid);
+    User_Data    user_data = { &rb };
+    OS_Audio_Config config = { atwl->format, audio_callback, &user_data };
 
-    ss_stop_sound(&ss, kick_iid);
-    ss_stop_sound(&ss, atwl_iid);
+    s32 result = 0;
 
-    kick_iid = ss_play_sound(&ss, kick_aid);
-    atwl_iid = ss_play_sound(&ss, atwl_aid);
+    result = os_win32_audio_init(&device, &config);
+    if (result < 0)
+    {
+        fprintf(stderr, "ERROR: failed to init audio client!\n");
+        return result;
+    }
 
-    printf("kick_iid = %u, atwl_iid = %u\n", kick_iid, atwl_iid);
+    result = os_win32_audio_start(&device);
+    if (result < 0)
+    {
+        fprintf(stderr, "ERROR: failed to start audio client!\n");
+        return result;
+    }
+    
+    while (true) 
+    {
+        ss_mix(&ss, &rb);
+        os_sleep_ms(50);
+    }
 
-    u32 kick_2_iid = ss_play_sound(&ss, kick_aid);
-    u32 atwl_2_iid = ss_play_sound(&ss, atwl_aid);
+    // stop playing device
+    result = os_win32_audio_stop(&device);
+    if (result < 0)
+    {
+        fprintf(stderr, "ERROR: failed to stop audio client!\n");
+        return result;
+    }
 
-    printf("kick_2_iid = %u, atwl_2_iid = %u\n", kick_2_iid, atwl_2_iid);
-    ss_stop_sound(&ss, kick_2_iid);
-
-    u32 kick_3_iid = ss_play_sound(&ss, kick_aid);
-    u32 atwl_3_iid = ss_play_sound(&ss, atwl_aid);
-
-    printf("kick_3_iid = %u, atwl_3_iid = %u\n", kick_3_iid, atwl_3_iid);
-    ss_stop_sound(&ss, atwl_2_iid);
-    ss_stop_sound(&ss, kick_3_iid);
-    ss_stop_sound(&ss, atwl_3_iid);
+    os_win32_audio_deinit(&device);
 
     return 0;
 }

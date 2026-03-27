@@ -168,16 +168,16 @@ Wav_Data wav_get_data(Arena* arena, Wav_Sub_Chunk_List* list, String data)
 
     Wav_Sub_Chunk_Node data_node = wav_sub_chunk_from_id(list, WAV_FOURCC(WAV_DATA_CHUNK_ID));
 
-    u8* src =  (u8*)&data.data[data_node.data_offset];
-    u8* dest = ARENA_PUSH_ARRAY(arena, u8, data_node.header.size);
+    result.buffer = ARENA_PUSH_ARRAY(arena, u8, data_node.header.size);
+    result.size   = data_node.header.size;
+
+    u8* src  = (u8*)&data.data[data_node.data_offset];
+    u8* dest = result.buffer;
 
     for (u32 i = 0; i < data_node.header.size; ++i)
     {
         *dest++ = *src++;
     }
-
-    result.size   = data_node.header.size;
-    result.buffer = dest;
 
     return result;
 }
