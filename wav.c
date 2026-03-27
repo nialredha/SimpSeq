@@ -120,6 +120,68 @@ Wav_Sub_Chunk_Node wav_sub_chunk_from_id(Wav_Sub_Chunk_List* list, u32 id)
     return result;
 }
 
+Wav_Format wav_get_format(Wav_Sub_Chunk_List* list, String data)
+{
+    Wav_Format result = {0};
+
+    Wav_Sub_Chunk_Node fmt_node = wav_sub_chunk_from_id(list, WAV_FOURCC(WAV_FORMAT_CHUNK_ID));
+
+    Wav_Format* fmt = (Wav_Format*)&data.data[fmt_node.data_offset];
+    if (fmt_node.header.size == 16)
+    {
+        result.format_tag      = fmt->format_tag;
+        result.num_channels    = fmt->num_channels;
+        result.sample_rate     = fmt->sample_rate;
+        result.byte_rate       = fmt->byte_rate;
+        result.block_align     = fmt->block_align;
+        result.bits_per_sample = fmt->bits_per_sample;
+    }
+    else if (fmt_node.header.size == 16 + 22)
+    {
+        result.format_tag      = fmt->format_tag;
+        result.num_channels    = fmt->num_channels;
+        result.sample_rate     = fmt->sample_rate;
+        result.byte_rate       = fmt->byte_rate;
+        result.block_align     = fmt->block_align;
+        result.bits_per_sample = fmt->bits_per_sample;
+
+        result.cb_size                = fmt->cb_size;
+        result.valid_bits_per_sample  = fmt->valid_bits_per_sample;
+        result.channel_mask           = fmt->channel_mask;
+        for (u32 i = 0; i < sizeof(result.sub_format); ++i)
+        {
+            result.sub_format[i] = fmt->sub_format[i];
+        }
+    }
+    else
+    {
+        // uh oh
+        fprintf(stderr, "ERROR: Invalid format!\n");
+    }
+    
+    return result;
+}
+
+Wav_Data wav_get_data(Arena* arena, Wav_Sub_Chunk_List* list, String data)
+{
+    Wav_Data result = {0};
+
+    Wav_Sub_Chunk_Node data_node = wav_sub_chunk_from_id(list, WAV_FOURCC(WAV_DATA_CHUNK_ID));
+
+    u8* src =  (u8*)&data.data[data_node.data_offset];
+    u8* dest = ARENA_PUSH_ARRAY(arena, u8, data_node.header.size);
+
+    for (u32 i = 0; i < data_node.header.size; ++i)
+    {
+        *dest++ = *src++;
+    }
+
+    result.size   = data_node.header.size;
+    result.buffer = dest;
+
+    return result;
+}
+
 String wav_string_from_format_tag(Wav_Format_Tag format_tag)
 {
     switch (format_tag)
