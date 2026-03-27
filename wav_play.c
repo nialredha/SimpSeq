@@ -28,18 +28,15 @@
 
 typedef struct
 {
-    Wav_Format*  fmt;
     Ring_Buffer* rb;
 } User_Data;
 
-void audio_callback(void* user_data, u32 num_frames_needed, void* output)
+void audio_callback(Wav_Format* format, void* user_data, u32 num_frames_needed, void* output)
 {
-    User_Data* ud = (User_Data*)user_data;
-
-    Wav_Format*  fmt = ud->fmt;
+    User_Data*   ud  = (User_Data*)user_data;
     Ring_Buffer* rb  = ud->rb;
 
-    u32 bytes_needed  = (num_frames_needed * fmt->num_channels) * (fmt->bits_per_sample / 8);
+    u32 bytes_needed  = (num_frames_needed * format->num_channels) * (format->bits_per_sample / 8);
     rb_read(rb, (u8*)output, bytes_needed);
 }
 
@@ -75,13 +72,13 @@ s32 main2(s32 arg_count, char** args)
 
     OS_Audio_Device device = {0};
 
-    f32 seconds_per_loop = 1;
+    f32 seconds_per_loop = 1.0f;
     u32 samples_per_loop = (u32)((seconds_per_loop * (f32)wav_fmt.sample_rate) * (f32)wav_fmt.num_channels);
     u32 bytes_per_loop   = samples_per_loop * (wav_fmt.bits_per_sample / 8);
 
     Ring_Buffer rb = rb_create(bytes_per_loop*2);
 
-    User_Data    user_data = { &wav_fmt, &rb };
+    User_Data    user_data = { &rb };
     OS_Audio_Config config = { wav_fmt, audio_callback, &user_data };
 
     HRESULT result = 0;
@@ -109,7 +106,7 @@ s32 main2(s32 arg_count, char** args)
         return result;
     }
     
-    u32 time_ms = (u32)(1000.0 * (seconds_per_loop / 2.0));
+    // u32 time_ms = (u32)(1000.0 * (seconds_per_loop / 2.0));
 
     while (src_playhead < src_size) 
     {
@@ -127,7 +124,7 @@ s32 main2(s32 arg_count, char** args)
         u32 bytes_written = rb_write(&rb, &src[src_playhead], bytes_to_write);
         src_playhead += bytes_written;
 
-        os_sleep_ms(time_ms);
+        // os_sleep_ms(time_ms);
     }
 
     // stop playing device

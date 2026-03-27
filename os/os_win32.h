@@ -45,7 +45,7 @@ DEFINE_GUID(IID_IAudioRenderClient, 0xF294ACFC, 0x3146, 0x4483, 0xA7, 0xBF, 0xAD
 #define REF_TIME_NANOSECONDS_PER_SECOND (1e9)
 #define REF_TIME_UNITS_PER_SECOND       (REF_TIME_NANOSECONDS_PER_SECOND * REF_TIME_UNITS_PER_NANOSECOND)
 
-typedef void (* Audio_Callback)(void* user_data, u32 num_frames_needed, void* output); 
+typedef void (* Audio_Callback)(Wav_Format* format, void* user_data, u32 num_frames_needed, void* output); 
 
 typedef struct
 {

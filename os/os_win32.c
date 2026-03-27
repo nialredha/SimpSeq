@@ -247,7 +247,7 @@ u32 audio_playback_thread(void* param)
             break;
         }
 
-        device->audio_callback(device->user_data, frames_available, data);
+        device->audio_callback((Wav_Format*)device->audio_format, device->user_data, frames_available, data);
 
         render_client->lpVtbl->ReleaseBuffer(render_client, frames_available, 0);
     }
