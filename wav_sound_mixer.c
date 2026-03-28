@@ -422,8 +422,21 @@ void ss_stop_sound(Sound_System* ss, u32 instance_id)
 
 void ss_mix(Sound_System* ss, Ring_Buffer* out)
 {
-    u8* mix_buffer = (u8*)ss->mix_buffer;
-#if 0
+    u32 bytes_available = (u32)out->amount_free;
+
+    u32 bytes_per_sample = sizeof(*ss->mix_buffer); // TODO[nr] @better
+
+    u32 samples_available = bytes_available / bytes_per_sample;
+    u32 samples_to_mix = 9600;
+    samples_to_mix = samples_available < samples_to_mix ? samples_available : samples_to_mix;
+
+    f32* mix_buffer = ss->mix_buffer;
+    for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
+    {
+        *mix_buffer++ = 0;
+    }
+
+#if 1
     for (u32 sound_id = ss->instance_pool.first_slot;
          sound_id != 0;
          sound_id = sound_instance_get(&ss->instance_pool, sound_id)->next)
@@ -436,28 +449,40 @@ void ss_mix(Sound_System* ss, Ring_Buffer* out)
         Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
         Sound_Asset_Slot*    asset = sound_asset_get(&ss->asset_pool, sound->asset_id);
 
-        u32 amount_to_mix = 9600*4;
-        u32 amount_needed = (u32)out->amount_free;
-        u32 amount_mixed  = 0;
+        u32 byte_index       = sound->playhead * bytes_per_sample;
+        f32* asset_data      = (f32*)&asset->data.buffer[byte_index];
+        u32 samples_in_asset = asset->data.size / bytes_per_sample; 
 
-        amount_to_mix = amount_needed < amount_to_mix ? amount_needed : amount_to_mix;
+        // TODO[nr] @add: loopability
+        bool loop = true;
 
-        for (u32 mix_index = 0; mix_index < amount_to_mix; ++mix_index)
+        mix_buffer = ss->mix_buffer;
+        for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
         {
-            if (sound->playhead < asset->data.size)
+            if (sound->playhead < samples_in_asset)
             {
-                *mix_buffer++ = asset->data.buffer[sound->playhead++];
-                amount_mixed++;
+                *mix_buffer++ += *asset_data++;
+                sound->playhead++;
             }
             else
             {
-                break;
+
+                if (loop)
+                {
+                    sound->playhead = 0;
+                }
+                else
+                {
+                    ss_stop_sound(ss, sound_id);
+                }
+
+                samples_to_mix = mix_index;
             }
         }
 
-        u32 amount_written = rb_write(out, (u8*)ss->mix_buffer, amount_mixed);
-        assert(amount_written == amount_mixed);
     }
+
+    rb_write(out, (u8*)ss->mix_buffer, samples_to_mix*bytes_per_sample);
 
     return;
 }
@@ -512,10 +537,17 @@ s32 main2(s32 arg_count, char** args)
         return result;
     }
     
+    u32 frame_to_play = 50;
+    u32 frame_count = 0;
     while (true) 
     {
         ss_mix(&ss, &rb);
         os_sleep_ms(50);
+
+        if (frame_count++ == frame_to_play)
+        {
+            ss_play_sound(&ss, atwl_aid);
+        }
     }
 
     // stop playing device
