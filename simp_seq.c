@@ -17,82 +17,13 @@
 #include "wav_dump_utils.c"
 
 #include "os.c"
+
+#define OS_WIN32_DLL
 #include "os_win32.c"
 
-#define SUPPORTED_FORMAT_TAG    (Wav_Format_Tag_IEE_FLOAT)
-#define SUPPORTED_BIT_DEPTH     (32)
-#define SUPPORTED_CHANNEL_COUNT (2)
-#define SUPPORTED_SAMPLE_RATE   (48000)
+#include "simp_seq.h"
 
-#define MAX_SOUND_ASSET_SLOTS    (32)
-#define MAX_SOUND_INSTANCE_SLOTS (64)
-
-typedef struct
-{
-    u32 next;
-    u32 prev;
-
-    String filename;
-
-    Wav_Format format;
-    Wav_Data   data;
-} Sound_Asset_Slot;
-
-typedef struct
-{
-    u32 first_slot;
-    u32 last_slot;
-
-    u32 first_free;
-    u32 last_free;
-
-    u32 first_unused;
-
-    Sound_Asset_Slot slot[MAX_SOUND_ASSET_SLOTS];
-    bool             used[MAX_SOUND_ASSET_SLOTS];
-} Sound_Asset_Pool;
-
-typedef struct
-{
-    u32 next;
-    u32 prev;
-
-    u32 asset_id;
-    u32 playhead;
-
-    f32 volume;
-    f32 pan;
-    f32 pitch;
-
-    bool loop;
-} Sound_Instance_Slot;
-
-typedef struct
-{
-    u32 first_slot;
-    u32 last_slot;
-
-    u32 first_free;
-    u32 last_free;
-
-    u32 first_unused;
-
-    Sound_Instance_Slot slot[MAX_SOUND_INSTANCE_SLOTS];
-    bool                used[MAX_SOUND_INSTANCE_SLOTS];
-} Sound_Instance_Pool;
-
-typedef struct
-{
-    Arena perm_arena;
-    Arena tran_arena;
-
-    Sound_Asset_Pool    asset_pool;
-    Sound_Instance_Pool instance_pool;
-
-    float mix_buffer[9600]; // TODO[nr] @better: assuming 100ms 48KHz stereo 
-} Sound_System;
-
-bool sound_asset_is_valid(Sound_Asset_Pool* pool, u32 slot_id)
+static bool sound_asset_is_valid(Sound_Asset_Pool* pool, u32 slot_id)
 {
     if (slot_id > 0 && 
         slot_id < MAX_SOUND_ASSET_SLOTS && 
@@ -104,7 +35,7 @@ bool sound_asset_is_valid(Sound_Asset_Pool* pool, u32 slot_id)
     return false;
 }
 
-u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
+static u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
 {
     u32 slot_id;
 
@@ -164,7 +95,7 @@ u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
     return slot_id;
 }
 
-void sound_asset_rem(Sound_Asset_Pool* pool, u32 slot_id)
+static void sound_asset_rem(Sound_Asset_Pool* pool, u32 slot_id)
 {
     if (sound_asset_is_valid(pool, slot_id))
     {
@@ -215,7 +146,7 @@ void sound_asset_rem(Sound_Asset_Pool* pool, u32 slot_id)
     return;
 }
 
-Sound_Asset_Slot* sound_asset_get(Sound_Asset_Pool* pool, u32 slot_id)
+static Sound_Asset_Slot* sound_asset_get(Sound_Asset_Pool* pool, u32 slot_id)
 {
     Sound_Asset_Slot* result = &pool->slot[0];
 
@@ -227,7 +158,7 @@ Sound_Asset_Slot* sound_asset_get(Sound_Asset_Pool* pool, u32 slot_id)
     return result;
 }
 
-Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool* pool, u32 slot_id)
+static Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool* pool, u32 slot_id)
 {
     Sound_Asset_Slot* result = &pool->slot[0];
 
@@ -261,7 +192,7 @@ Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool* pool,
     return result;
 }
 
-bool sound_instance_is_valid(Sound_Instance_Pool* pool, u32 slot_id)
+static bool sound_instance_is_valid(Sound_Instance_Pool* pool, u32 slot_id)
 {
     if (slot_id > 0 && 
         slot_id < MAX_SOUND_INSTANCE_SLOTS && 
@@ -273,7 +204,7 @@ bool sound_instance_is_valid(Sound_Instance_Pool* pool, u32 slot_id)
     return false;
 }
 
-u32 sound_instance_add(Sound_Instance_Pool* pool, u32 asset_id)
+static u32 sound_instance_add(Sound_Instance_Pool* pool, u32 asset_id)
 {
     u32 slot_id;
 
@@ -338,7 +269,7 @@ u32 sound_instance_add(Sound_Instance_Pool* pool, u32 asset_id)
     return slot_id;
 }
 
-void sound_instance_rem(Sound_Instance_Pool* pool, u32 slot_id)
+static void sound_instance_rem(Sound_Instance_Pool* pool, u32 slot_id)
 {
     if (sound_instance_is_valid(pool, slot_id))
     {
@@ -389,7 +320,7 @@ void sound_instance_rem(Sound_Instance_Pool* pool, u32 slot_id)
     return;
 }
 
-Sound_Instance_Slot* sound_instance_get(Sound_Instance_Pool* pool, u32 slot_id)
+static Sound_Instance_Slot* sound_instance_get(Sound_Instance_Pool* pool, u32 slot_id)
 {
     Sound_Instance_Slot* result = &pool->slot[0];
 
@@ -401,7 +332,7 @@ Sound_Instance_Slot* sound_instance_get(Sound_Instance_Pool* pool, u32 slot_id)
     return result;
 }
 
-void ss_init(Sound_System* ss)
+static void ss_init(Simp_Seq_State* ss)
 {
     // why am I doing this - not sure.
     u8* dest = (u8*)ss;
@@ -416,7 +347,7 @@ void ss_init(Sound_System* ss)
     return;
 }
 
-u32 ss_play_sound(Sound_System* ss, u32 asset_id)
+static u32 ss_play_sound(Simp_Seq_State* ss, u32 asset_id)
 {
     u32 instance_id = 0;
 
@@ -430,14 +361,14 @@ u32 ss_play_sound(Sound_System* ss, u32 asset_id)
     return instance_id;
 }
 
-void ss_stop_sound(Sound_System* ss, u32 instance_id)
+static void ss_stop_sound(Simp_Seq_State* ss, u32 instance_id)
 {
     sound_instance_rem(&ss->instance_pool, instance_id);
 
     return;
 }
 
-void ss_mix(Sound_System* ss, Ring_Buffer* out)
+static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
 {
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     // TODO[nr] @better: this whole thing depends on the WAV being f32 48KHz stereo!
@@ -510,89 +441,33 @@ void ss_mix(Sound_System* ss, Ring_Buffer* out)
     return;
 }
 
-typedef struct
+void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
 {
-    Ring_Buffer* rb;
-} User_Data;
-
-void audio_callback(Wav_Format* format, void* user_data, u32 num_frames_needed, void* output)
-{
-    User_Data*   ud  = (User_Data*)user_data;
-    Ring_Buffer* rb  = ud->rb;
-
-    u32 bytes_needed  = (num_frames_needed * format->num_channels) * (format->bits_per_sample / 8);
-    rb_read(rb, (u8*)output, bytes_needed);
-}
-
-s32 entry_point(s32 arg_count, char** args)
-{
-    (void)arg_count;
-    (void)args;
-
-    Sound_System ss = {0};
-    ss_init(&ss);
-
-    u32 atwl_aid = sound_asset_add(&ss.asset_pool, STR_LIT("test_track.wav"));
-
-    u32 atwl_iid = ss_play_sound(&ss, atwl_aid);
-
-    Sound_Instance_Slot* atwl = sound_instance_get(&ss.instance_pool, atwl_iid);
-    atwl->volume = 0.5f;
-    atwl->pan    = -1.0f;
-    atwl->loop   = true;
-
-    u32 atwl2_iid = ss_play_sound(&ss, atwl_aid);
-    Sound_Instance_Slot* atwl2 = sound_instance_get(&ss.instance_pool, atwl2_iid);
-    atwl2->volume = 0.5f;
-    atwl2->pan    = 1.0f;
-    atwl2->loop   = false;
-
-    OS_Audio_Device device = {0};
-    Ring_Buffer rb = rb_create(9600*4); // TODO[nr] @better
-
-    Sound_Asset_Slot* atwl_asset = sound_asset_get(&ss.asset_pool, atwl_aid);
-
-    User_Data    user_data = { &rb };
-    OS_Audio_Config config = { atwl_asset->format, audio_callback, &user_data };
-
-    s32 result = 0;
-
-    result = os_win32_audio_init(&device, &config);
-    if (result < 0)
+    if (!ss->initialized)
     {
-        fprintf(stderr, "ERROR: failed to init audio client!\n");
-        return result;
+        printf("initializing simp seq!\n");
+
+        ss_init(ss);
+
+        ss->sound_asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("test_track.wav"));
+        ss->pan_direction  = -1;
+
+        ss->initialized = true;
     }
 
-    result = os_win32_audio_start(&device);
-    if (result < 0)
+    if (ss->sound_instance_id == 0)
     {
-        fprintf(stderr, "ERROR: failed to start audio client!\n");
-        return result;
+        ss->sound_instance_id = ss_play_sound(ss, ss->sound_asset_id);
     }
+    else
+    {
+        Sound_Instance_Slot* sound_instance = sound_instance_get(&ss->instance_pool, ss->sound_instance_id);
+        sound_instance->volume = 1.0f;
+        sound_instance->pan    = 0.0f;
+        sound_instance->loop   = true;
+    }
+
+    ss_mix(ss, out);
     
-    s32 sign = 1;
-
-    while (true) 
-    {
-        if      (atwl->pan > 1.0) { sign = -1; }
-        else if (atwl->pan < -1.0){ sign =  1; }
-
-        atwl->pan += (sign*0.1f);
-
-        ss_mix(&ss, &rb);
-        os_sleep_ms(50);
-    }
-
-    // stop playing device
-    result = os_win32_audio_stop(&device);
-    if (result < 0)
-    {
-        fprintf(stderr, "ERROR: failed to stop audio client!\n");
-        return result;
-    }
-
-    os_win32_audio_deinit(&device);
-
-    return 0;
+    return;
 }

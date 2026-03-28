@@ -120,6 +120,56 @@ void os_sleep_ms(u32 milliseconds)
 }
 
 //
+// DLL
+//
+
+static void os_win32_reload_dll(OS_Win32_DLL* dll)
+{
+    // TODO[nr]: prepend the dll name to this
+    char* dll_temp_name = "temp.dll";
+
+    if (dll->handle != 0)
+    {
+        os_win32_unload_dll(dll);
+    }
+
+    bool result = CopyFileA(dll->filename.data, dll_temp_name, FALSE);
+    if (!result)
+    {
+        // Failed to copy file! Early exit and hopefully the caller will try again!
+        return;
+    }
+
+    dll->last_write_time = os_win32_get_last_write_time_of_file(dll->filename);
+    dll->handle          = LoadLibraryA(dll_temp_name);
+
+    return;
+}
+
+static void* os_win32_get_function_pointer(OS_Win32_DLL* dll, String function_name)
+{
+    void* result = 0;
+
+    if (dll->handle != 0)
+    {
+        result = (void*)GetProcAddress(dll->handle, function_name.data);
+    }
+
+    return result;
+}
+
+static void os_win32_unload_dll(OS_Win32_DLL* dll)
+{
+    if (dll->handle != 0)
+    {
+        FreeLibrary(dll->handle);    
+        dll->handle = 0;
+    }
+
+    return;
+}
+
+//
 // TIME
 //
 
@@ -413,6 +463,7 @@ u32 audio_playback_thread(void* param)
     return 0;
 }
 
+#ifndef OS_WIN32_DLL
 static char* str_from_str16_in_place(WCHAR* wstr);
 
 int wmain(int argc, WCHAR** argv)
@@ -450,3 +501,5 @@ char* str_from_str16_in_place(WCHAR* wstr)
 
     return str;
 }
+
+#endif
