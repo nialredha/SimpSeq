@@ -19,6 +19,11 @@
 #include "os.c"
 #include "os_win32.c"
 
+#define SUPPORTED_FORMAT_TAG    (Wav_Format_Tag_IEE_FLOAT)
+#define SUPPORTED_BIT_DEPTH     (32)
+#define SUPPORTED_CHANNEL_COUNT (2)
+#define SUPPORTED_SAMPLE_RATE   (48000)
+
 #define MAX_SOUND_ASSET_SLOTS    (32)
 #define MAX_SOUND_INSTANCE_SLOTS (64)
 
@@ -237,8 +242,17 @@ Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool* pool,
             String file = os_read_entire_file(result->filename);
             Wav wav     = wav_from_data(arena, file);
 
-            result->format = wav_get_format(&wav.sub_chunks, file);
-            result->data   = wav_get_data(arena, &wav.sub_chunks, file);
+            Wav_Format format = wav_get_format(&wav.sub_chunks, file);
+
+            assert(format.format_tag      == SUPPORTED_FORMAT_TAG); 
+            assert(format.bits_per_sample == SUPPORTED_BIT_DEPTH);
+            assert(format.num_channels    == SUPPORTED_CHANNEL_COUNT);
+            assert(format.sample_rate     == SUPPORTED_SAMPLE_RATE);
+
+            Wav_Data data = wav_get_data(arena, &wav.sub_chunks, file);
+
+            result->format = format;
+            result->data   = data;
 
             free(file.data);
         }
@@ -396,7 +410,7 @@ void ss_init(Sound_System* ss)
         *dest++ = 0;
     }
 
-    arena_alloc(&ss->perm_arena, 4*1024*1024);
+    arena_alloc(&ss->perm_arena, 16*1024*1024);
     arena_alloc(&ss->tran_arena, 4*1024);
 
     return;
@@ -456,12 +470,23 @@ void ss_mix(Sound_System* ss, Ring_Buffer* out)
         u32 samples_in_asset = asset->data.size / bytes_per_sample; 
 
         mix_buffer = ss->mix_buffer;
-        for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
+        for (u32 mix_index = 0; mix_index < samples_to_mix; mix_index += 2)
         {
             if (sound->playhead < samples_in_asset)
             {
-                *mix_buffer++ += (*asset_data++ * sound->volume);
-                sound->playhead++;
+                // TODO[nr] @study: currently doing equal power panning, but that makes center quieter...
+#if 0
+                f32 pan_0 = (1 - sound->pan);
+                f32 pan_1 = (sound->pan);
+#else
+                f32 pan_0 = sound->pan < 0 ? 1.0f : 1 - sound->pan;
+                f32 pan_1 = sound->pan > 0 ? 1.0f : 1 + sound->pan;
+#endif
+
+                *mix_buffer++ += (*asset_data++ * sound->volume * pan_0);
+                *mix_buffer++ += (*asset_data++ * sound->volume * pan_1);
+
+                sound->playhead += 2;
             }
             else
             {
@@ -507,13 +532,20 @@ s32 main2(s32 arg_count, char** args)
     Sound_System ss = {0};
     ss_init(&ss);
 
-    u32 atwl_aid = sound_asset_add(&ss.asset_pool, STR_LIT("atwl_f32.wav"));
+    u32 atwl_aid = sound_asset_add(&ss.asset_pool, STR_LIT("test_track.wav"));
 
     u32 atwl_iid = ss_play_sound(&ss, atwl_aid);
 
     Sound_Instance_Slot* atwl = sound_instance_get(&ss.instance_pool, atwl_iid);
-    atwl->volume = 0.2f;
+    atwl->volume = 0.5f;
+    atwl->pan    = -1.0f;
     atwl->loop   = true;
+
+    u32 atwl2_iid = ss_play_sound(&ss, atwl_aid);
+    Sound_Instance_Slot* atwl2 = sound_instance_get(&ss.instance_pool, atwl2_iid);
+    atwl2->volume = 0.5f;
+    atwl2->pan    = 1.0f;
+    atwl2->loop   = false;
 
     OS_Audio_Device device = {0};
     Ring_Buffer rb = rb_create(9600*4); // TODO[nr] @better
@@ -539,20 +571,17 @@ s32 main2(s32 arg_count, char** args)
         return result;
     }
     
-    u32 frame_to_play = 50;
-    u32 frame_count   = 0;
+    s32 sign = 1;
+
     while (true) 
     {
+        if      (atwl->pan > 1.0) { sign = -1; }
+        else if (atwl->pan < -1.0){ sign =  1; }
+
+        atwl->pan += (sign*0.1f);
+
         ss_mix(&ss, &rb);
         os_sleep_ms(50);
-
-        if (frame_count++ == frame_to_play)
-        {
-            u32 atwl2_iid = ss_play_sound(&ss, atwl_aid);
-            Sound_Instance_Slot* atwl2 = sound_instance_get(&ss.instance_pool, atwl2_iid);
-            atwl2->volume = 0.8f;
-            atwl2->loop   = false;
-        }
     }
 
     // stop playing device
