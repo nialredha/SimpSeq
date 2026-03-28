@@ -4,7 +4,16 @@
 #include <windows.h>
 
 //
-// intrinsics
+// TIME
+//
+
+FILETIME      os_win32_get_last_write_time_of_file      (String filename);
+f32           os_win32_get_seconds_elapsed              (LARGE_INTEGER start, LARGE_INTEGER end, s64 perf_counter_freq);
+LARGE_INTEGER os_win32_get_performance_counter_count    (void);
+LARGE_INTEGER os_win32_get_performance_counter_frequency(void);
+
+//
+// INTRINSICS
 //
 
 #include <winnt.h>
@@ -22,7 +31,12 @@ inline s64 os_win32_atomic_add_s64(s64* volatile value, s64 addend)
 }
 
 //
-// audio
+// WASAPI
+//
+//   References:
+//     https://medium.com/@shahidahmadkhan86/sound-in-windows-the-wasapi-in-c-23024cdac7c6 
+//     https://www.reddit.com/r/C_Programming/comments/1gv80uq/cannot_solve_errors_for_unresolved_external/
+//     https://learn.microsoft.com/en-us/windows/win32/coreaudio/rendering-a-stream
 //
 
 #define INITGUID

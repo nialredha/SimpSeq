@@ -1,10 +1,168 @@
-#define DEFAULT_BUFFER_SIZE_IN_SECONDS (0.1f)
+//
+// General OS API
+//
+
+OS_File_Properties os_get_file_properties(String filepath)
+{
+    OS_File_Properties result = {0};
+
+    WIN32_FIND_DATAA find_data = {0};
+    HANDLE file_handle = FindFirstFileA(filepath.data, &find_data);
+
+    if(file_handle != INVALID_HANDLE_VALUE)
+    {
+        assert(find_data.nFileSizeHigh == 0);
+        result.size = (u32)find_data.nFileSizeLow;
+
+        result.time_created  = ((u64)find_data.ftCreationTime.dwHighDateTime << 32)  | 
+                               (find_data.ftCreationTime.dwLowDateTime);
+
+        result.time_modified = ((u64)find_data.ftLastWriteTime.dwHighDateTime << 32) | 
+                               (find_data.ftLastWriteTime.dwLowDateTime);
+    }
+
+    FindClose(file_handle);
+
+    return result;
+}
+
+String os_read_entire_file(String filepath)
+{
+    String result = {0};
+
+    HANDLE file_handle = CreateFileA(filepath.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER file_size;
+        if (GetFileSizeEx(file_handle, &file_size))
+        {
+            result.count = (u32)(file_size.QuadPart);
+
+            result.data = (char*)VirtualAlloc(0, result.count, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+            if (result.data)
+            {
+                DWORD bytes_read;
+
+                if (!ReadFile(file_handle, result.data, result.count, &bytes_read, 0) || 
+                    result.count != bytes_read)
+                {
+                    // Something went wrong
+                    VirtualFree(result.data, 0, MEM_RELEASE);
+
+                    result.data = 0;
+                    result.count = 0;
+                }
+            }
+        }
+
+        CloseHandle(file_handle);
+    }
+
+    return result;
+}
+
+bool os_write_entire_file(String filename, String contents)
+{
+    bool result = true;
+
+    // TODO[nr]: CREATE_ALWAYS instead of CREATE_NEW?
+    HANDLE file_handle = CreateFileA(filename.data, GENERIC_WRITE, 0, 0, CREATE_NEW, 0, 0);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        DWORD bytes_written;
+
+        if (!WriteFile(file_handle, contents.data, contents.count, &bytes_written, 0) || 
+            contents.count != bytes_written)
+        {
+            result = false;
+        }
+
+        CloseHandle(file_handle);
+    }
+    else
+    {
+        result = false;
+    }
+
+    return result;
+}
+
+void os_free_file_contents(String* contents)
+{
+    if (contents != 0)
+    {
+        if (contents->data != 0)
+        {
+            VirtualFree(contents->data, 0, MEM_RELEASE);
+            contents->data  = 0;
+            contents->count = 0;
+        }
+    }
+
+    return;
+}
+
+u64 os_now_us(void)
+{
+    LARGE_INTEGER pc_count = os_win32_get_performance_counter_count();
+    LARGE_INTEGER pc_freq  = os_win32_get_performance_counter_frequency();
+
+    f32 microseconds_per_second = 1000000;
+    u64 result = (u64)(((f32)pc_count.QuadPart / (f32)pc_freq.QuadPart) * microseconds_per_second);
+    return result;
+}
 
 void os_sleep_ms(u32 milliseconds)
 {
     Sleep(milliseconds);
     return;
 }
+
+//
+// TIME
+//
+
+FILETIME os_win32_get_last_write_time_of_file(String filename)
+{
+    FILETIME last_write_time = {0};
+
+    WIN32_FIND_DATA find_data;
+    HANDLE find_handle = FindFirstFileA(filename.data, &find_data);
+    if (find_handle != INVALID_HANDLE_VALUE)
+    {
+        last_write_time = find_data.ftLastWriteTime;
+        FindClose(find_handle);
+    }
+
+    return last_write_time;
+}
+
+f32 os_win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end, s64 perf_counter_freq)
+{
+    f32 result = (f32)(end.QuadPart - start.QuadPart) / (f32)perf_counter_freq;
+    return result;
+}
+
+LARGE_INTEGER os_win32_get_performance_counter_count(void)
+{
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return result;
+}
+
+LARGE_INTEGER os_win32_get_performance_counter_frequency(void)
+{
+    LARGE_INTEGER result;
+    QueryPerformanceFrequency(&result);
+    return result;
+}
+
+//
+// WASAPI
+//
+
+#define DEFAULT_BUFFER_SIZE_IN_SECONDS (0.1f)
 
 static u32 audio_playback_thread(void* param);
 
@@ -267,7 +425,7 @@ int wmain(int argc, WCHAR** argv)
     s32 arg_count = argc;
     char** args   = (char**)argv;
 
-    s32 result = main2(arg_count, args);
+    s32 result = entry_point(arg_count, args);
 
     return result;
 }

@@ -254,7 +254,7 @@ Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool* pool,
             result->format = format;
             result->data   = data;
 
-            free(file.data);
+            os_free_file_contents(&file);
         }
     }
 
@@ -524,7 +524,7 @@ void audio_callback(Wav_Format* format, void* user_data, u32 num_frames_needed, 
     rb_read(rb, (u8*)output, bytes_needed);
 }
 
-s32 main2(s32 arg_count, char** args)
+s32 entry_point(s32 arg_count, char** args)
 {
     (void)arg_count;
     (void)args;

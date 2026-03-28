@@ -1,17 +1,23 @@
 #include "base_core.h"
 #include "base_arena.h"
 #include "base_string.h"
-#include "os.h"
+
 #include "wav.h"
 #include "wav_dump_utils.h"
 
+#include "os.h"
+#include "os_win32.h"
+
 #include "base_arena.c"
 #include "base_string.c"
-#include "os.c"
+
 #include "wav.c"
 #include "wav_dump_utils.c"
 
-int main(int argc, char** argv)
+#include "os.c"
+#include "os_win32.c"
+
+int entry_point(int argc, char** argv)
 {
     // globals
     Arena arena = {0};
@@ -119,6 +125,10 @@ int main(int argc, char** argv)
                                        "}\n"));
         }
     }
+
+    //
+    // TODO[nr] @fix: add the following functionality to win32 os layer
+    //
 
     // output to stream
     FILE* stream = stdout;

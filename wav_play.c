@@ -1,10 +1,3 @@
-//
-// References
-//   https://medium.com/@shahidahmadkhan86/sound-in-windows-the-wasapi-in-c-23024cdac7c6 
-//   https://www.reddit.com/r/C_Programming/comments/1gv80uq/cannot_solve_errors_for_unresolved_external/
-//   https://learn.microsoft.com/en-us/windows/win32/coreaudio/rendering-a-stream
-//
-
 #include "base_core.h"
 #include "base_arena.h"
 #include "base_string.h"
@@ -40,7 +33,7 @@ void audio_callback(Wav_Format* format, void* user_data, u32 num_frames_needed, 
     rb_read(rb, (u8*)output, bytes_needed);
 }
 
-s32 main2(s32 arg_count, char** args)
+s32 entry_point(s32 arg_count, char** args)
 {
     if (arg_count != 2)
     {

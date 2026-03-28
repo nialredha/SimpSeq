@@ -3,8 +3,8 @@
 
 typedef struct
 {
-    char*  data;
-    u32 count;
+    char* data;
+    u32   count;
 } String;
 
 typedef struct
