@@ -58,6 +58,8 @@ typedef struct
     f32 volume;
     f32 pan;
     f32 pitch;
+
+    bool loop;
 } Sound_Instance_Slot;
 
 typedef struct
@@ -297,9 +299,10 @@ u32 sound_instance_add(Sound_Instance_Pool* pool, u32 asset_id)
 
         slot->asset_id = asset_id;
         slot->playhead = 0;
-        slot->volume   = 0;
-        slot->pan      = 0;
-        slot->pitch    = 0;
+        slot->volume   = 1.0;
+        slot->pan      = 0.0;
+        slot->pitch    = 1.0;
+        slot->loop     = false;
 
         slot->prev = pool->last_slot;
         slot->next = 0;
@@ -422,29 +425,28 @@ void ss_stop_sound(Sound_System* ss, u32 instance_id)
 
 void ss_mix(Sound_System* ss, Ring_Buffer* out)
 {
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // TODO[nr] @better: this whole thing depends on the WAV being f32 48KHz stereo!
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     u32 bytes_available = (u32)out->amount_free;
 
-    u32 bytes_per_sample = sizeof(*ss->mix_buffer); // TODO[nr] @better
+    u32 bytes_per_sample = sizeof(*ss->mix_buffer);
 
     u32 samples_available = bytes_available / bytes_per_sample;
     u32 samples_to_mix = 9600;
     samples_to_mix = samples_available < samples_to_mix ? samples_available : samples_to_mix;
 
+    // clear buffer
     f32* mix_buffer = ss->mix_buffer;
     for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
     {
         *mix_buffer++ = 0;
     }
 
-#if 1
     for (u32 sound_id = ss->instance_pool.first_slot;
          sound_id != 0;
          sound_id = sound_instance_get(&ss->instance_pool, sound_id)->next)
-
-#else
-    u32 sound_id = ss->instance_pool.first_slot;
-    if (sound_id)
-#endif
     {
         Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
         Sound_Asset_Slot*    asset = sound_asset_get(&ss->asset_pool, sound->asset_id);
@@ -453,21 +455,17 @@ void ss_mix(Sound_System* ss, Ring_Buffer* out)
         f32* asset_data      = (f32*)&asset->data.buffer[byte_index];
         u32 samples_in_asset = asset->data.size / bytes_per_sample; 
 
-        // TODO[nr] @add: loopability
-        bool loop = true;
-
         mix_buffer = ss->mix_buffer;
         for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
         {
             if (sound->playhead < samples_in_asset)
             {
-                *mix_buffer++ += *asset_data++;
+                *mix_buffer++ += (*asset_data++ * sound->volume);
                 sound->playhead++;
             }
             else
             {
-
-                if (loop)
+                if (sound->loop)
                 {
                     sound->playhead = 0;
                 }
@@ -510,16 +508,20 @@ s32 main2(s32 arg_count, char** args)
     ss_init(&ss);
 
     u32 atwl_aid = sound_asset_add(&ss.asset_pool, STR_LIT("atwl_f32.wav"));
-    // u32 atwl_iid = ss_play_sound(&ss, atwl_aid);
-    ss_play_sound(&ss, atwl_aid);
+
+    u32 atwl_iid = ss_play_sound(&ss, atwl_aid);
+
+    Sound_Instance_Slot* atwl = sound_instance_get(&ss.instance_pool, atwl_iid);
+    atwl->volume = 0.2f;
+    atwl->loop   = true;
 
     OS_Audio_Device device = {0};
     Ring_Buffer rb = rb_create(9600*4); // TODO[nr] @better
 
-    Sound_Asset_Slot* atwl = sound_asset_get(&ss.asset_pool, atwl_aid);
+    Sound_Asset_Slot* atwl_asset = sound_asset_get(&ss.asset_pool, atwl_aid);
 
     User_Data    user_data = { &rb };
-    OS_Audio_Config config = { atwl->format, audio_callback, &user_data };
+    OS_Audio_Config config = { atwl_asset->format, audio_callback, &user_data };
 
     s32 result = 0;
 
@@ -538,7 +540,7 @@ s32 main2(s32 arg_count, char** args)
     }
     
     u32 frame_to_play = 50;
-    u32 frame_count = 0;
+    u32 frame_count   = 0;
     while (true) 
     {
         ss_mix(&ss, &rb);
@@ -546,7 +548,10 @@ s32 main2(s32 arg_count, char** args)
 
         if (frame_count++ == frame_to_play)
         {
-            ss_play_sound(&ss, atwl_aid);
+            u32 atwl2_iid = ss_play_sound(&ss, atwl_aid);
+            Sound_Instance_Slot* atwl2 = sound_instance_get(&ss.instance_pool, atwl2_iid);
+            atwl2->volume = 0.8f;
+            atwl2->loop   = false;
         }
     }
 
