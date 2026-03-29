@@ -182,7 +182,7 @@ static Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool
 
             Wav_Data data = wav_get_data(arena, &wav.sub_chunks, file);
 
-            printf("%s samples: %u\n", result->filename.data, data.size / 4);
+            // printf("%s samples: %u\n", result->filename.data, data.size / 4);
 
             result->format = format;
             result->data   = data;
@@ -356,6 +356,10 @@ static Sequence_Row* sequence_add_row(Sequence* sequence)
         u32 row_index = sequence->row_count;
         result = &sequence->rows[row_index];
 
+        result->volume = 1.0f;
+        result->pitch  = 1.0f;
+        result->pan    = 0.0f;
+
         sequence->row_count += 1;
     }
 
@@ -526,18 +530,22 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
             if (cell_index >= sequence->playhead && cell_index < MAX_SEQUENCE_CELLS)
             {
                 // next column needs to play!
-                printf("cell_index = %u, playhead = %u\n", cell_index, sequence->playhead);
+                // printf("cell_index = %u, playhead = %u\n", cell_index, sequence->playhead);
 
                 for (u32 row_index = 0; row_index < sequence->row_count; ++row_index)
                 {
-                    Sequence_Cell* cell = &sequence->rows[row_index].cells[cell_index];
+                    Sequence_Row*  row  = &sequence->rows[row_index];
+                    Sequence_Cell* cell = &row->cells[cell_index];
 
                     if (cell->active)
                     {
-                        // ss_play_sound(ss, sequence->rows[row_index].asset_id);
-
-                        u32 sound_id = ss_play_sound(ss, sequence->rows[row_index].asset_id);
+                        u32 sound_id = ss_play_sound(ss, row->asset_id);
                         Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
+
+                        sound->volume = row->volume * cell->volume;
+                        sound->pan    = row->pan;
+                        sound->pitch  = row->pitch;
+
                         // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, sequence->rows[row_index].asset_id, sound->playhead);
                     }
                 }
@@ -580,9 +588,7 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
         *mix_buffer++ = 0;
     }
 
-    for (u32 sound_id = ss->instance_pool.first_slot;
-         sound_id != 0;
-         sound_id = sound_instance_get(&ss->instance_pool, sound_id)->next)
+    for (u32 sound_id = ss->instance_pool.first_slot; sound_id != 0; )
     {
         Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
         Sound_Asset_Slot*    asset = sound_asset_get(&ss->asset_pool, sound->asset_id);
@@ -665,14 +671,37 @@ void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
         ss->sound_asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("test_track.wav"));
         ss->pan_direction  = -1;
 
-        sequence_init(&ss->sequence, 270, 16);
+        sequence_init(&ss->sequence, 180, 16);
 
-        String kick_seq  = STR_LIT("1010000010000000");
-        String ch_seq    = STR_LIT("0000000000000000");
-        String snare_seq = STR_LIT("0000100000001000");
-        // String oh_seq    = STR_LIT("0001000100010001");
+        String voice1_seq = STR_LIT("1000000000000000");
+        String voice2_seq = STR_LIT("0000000000010000");
+        String piano_g    = STR_LIT("1111111111111111");
+        String kick_seq   = STR_LIT("1010000010000001");
+        String ch_seq     = STR_LIT("0000010100110010");
+        String oh_seq     = STR_LIT("1000000010000100");
+        String snare_seq  = STR_LIT("0000100000001000");
 
         Sequence_Row* row;
+
+        row = sequence_add_row_from_str(&ss->sequence, voice1_seq);
+        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals1.wav"));
+        row->volume = 0.5f;
+
+        row = sequence_add_row_from_str(&ss->sequence, voice2_seq);
+        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals5.wav"));
+        row->volume = 0.5f;
+
+        row = sequence_add_row_from_str(&ss->sequence, piano_g);
+        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/stage_grand_g.wav"));
+        row->volume = 0.5f;
+
+        for (u32 cell_index = 0; cell_index < ss->sequence.cell_count; ++cell_index)
+        {
+            if (cell_index % 2)
+            {
+                row->cells[cell_index].volume = 0.5f;
+            }
+        }
 
         row = sequence_add_row_from_str(&ss->sequence, kick_seq);
         row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/kick.wav"));
@@ -680,11 +709,12 @@ void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
         row = sequence_add_row_from_str(&ss->sequence, ch_seq);
         row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/ch.wav"));
 
+        row = sequence_add_row_from_str(&ss->sequence, oh_seq);
+        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/oh.wav"));
+
         row = sequence_add_row_from_str(&ss->sequence, snare_seq);
         row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/snare.wav"));
 
-        // row = sequence_add_row_from_str(&ss->sequence, oh_seq);
-        // row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/oh.wav"));
 
         sequence_print(&ss->sequence);
     
