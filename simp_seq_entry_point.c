@@ -102,7 +102,7 @@ s32 entry_point(s32 arg_count, char** args)
         
         last_current_write_time = current_write_time;
 
-        os_sleep_ms(50);
+        os_sleep_ms(10);
     }
 
     // stop playing device

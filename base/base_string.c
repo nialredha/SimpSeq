@@ -51,21 +51,13 @@ static String str_advance(String* str, u32 count)
 {
     String eaten = {0};
 
-    if (str->count > count)
+    if (str->count >= count)
     {
         eaten.data  = str->data;
         eaten.count = count;
 
         str->data  += count;
         str->count -= count;
-    }
-    else
-    {
-        str->data = '\0';
-        str->count = 1;
-
-        eaten.data  = str->data;
-        eaten.count = str->count;
     }
 
     return eaten;
