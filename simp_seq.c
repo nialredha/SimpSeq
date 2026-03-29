@@ -347,6 +347,20 @@ static void sequence_init(Sequence* sequence, f32 bpm, u32 num_steps)
     return;
 }
 
+static void sequence_clear(Sequence* sequence)
+{
+    sequence->bpm = 0.0f;
+
+    sequence->volume = 0.0;
+    sequence->pitch  = 0.0;
+    sequence->pan    = 0.0;
+
+    sequence->cell_count = 0;
+    sequence->row_count  = 0;
+
+    return;
+}
+
 static Sequence_Row* sequence_add_row(Sequence* sequence)
 {
     Sequence_Row* result = 0;
@@ -366,12 +380,14 @@ static Sequence_Row* sequence_add_row(Sequence* sequence)
     return result;
 }
 
-static Sequence_Row* sequence_add_row_from_str(Sequence* sequence, String row_str)
+static Sequence_Row* sequence_set_row_from_str(Sequence* sequence, u32 row_id, String row_str)
 {
-    Sequence_Row* row = sequence_add_row(sequence);
+    Sequence_Row* row = 0;
 
-    if (row != 0)
+    if (row_id < sequence->row_count)
     {
+        row = &sequence->rows[row_id];
+
         u32 cell_index = 0; 
         while (*row_str.data != 0 && cell_index < sequence->cell_count)
         {
@@ -397,6 +413,18 @@ static Sequence_Row* sequence_add_row_from_str(Sequence* sequence, String row_st
                 }
            }
         }
+    }
+
+    return row;
+}
+
+static Sequence_Row* sequence_add_row_from_str(Sequence* sequence, String row_str)
+{
+    Sequence_Row* row = sequence_add_row(sequence);
+
+    if (row != 0)
+    {
+        row = sequence_set_row_from_str(sequence, sequence->row_count - 1, row_str);
     }
 
     return row;
@@ -472,6 +500,9 @@ static void sequence_print(Sequence* sequence)
         printf("---|");
     }
     printf("\n");
+
+    // fflush(stdout);
+    // printf("\033[%dA", sequence->row_count + 2);
 }
 
 
@@ -671,72 +702,66 @@ void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
         ss->sound_asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("test_track.wav"));
         ss->pan_direction  = -1;
 
-        sequence_init(&ss->sequence, 180, 16);
+        ss->sequence.bpm        = 180;
+        ss->sequence.volume     = 1.0;
+        ss->sequence.pitch      = 1.0;
+        ss->sequence.pan        = 0.0;
+        ss->sequence.row_count  = 0;
+        ss->sequence.cell_count = 16;
 
-        String voice1_seq = STR_LIT("1000000000000000");
-        String voice2_seq = STR_LIT("0000000000010000");
-        String piano_g    = STR_LIT("1111111111111111");
-        String kick_seq   = STR_LIT("1010000010000001");
-        String ch_seq     = STR_LIT("0000010100110010");
-        String oh_seq     = STR_LIT("1000000010000100");
-        String snare_seq  = STR_LIT("0000100000001000");
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals1.wav"));
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals5.wav"));
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/stage_grand_g.wav"));
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/kick.wav"));
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/ch.wav"));
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/oh.wav"));
+        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/snare.wav"));
 
-        Sequence_Row* row;
-
-        row = sequence_add_row_from_str(&ss->sequence, voice1_seq);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals1.wav"));
-        row->volume = 0.5f;
-
-        row = sequence_add_row_from_str(&ss->sequence, voice2_seq);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals5.wav"));
-        row->volume = 0.5f;
-
-        row = sequence_add_row_from_str(&ss->sequence, piano_g);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/stage_grand_g.wav"));
-        row->volume = 0.5f;
-
-        for (u32 cell_index = 0; cell_index < ss->sequence.cell_count; ++cell_index)
-        {
-            if (cell_index % 2)
-            {
-                row->cells[cell_index].volume = 0.5f;
-            }
-        }
-
-        row = sequence_add_row_from_str(&ss->sequence, kick_seq);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/kick.wav"));
-
-        row = sequence_add_row_from_str(&ss->sequence, ch_seq);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/ch.wav"));
-
-        row = sequence_add_row_from_str(&ss->sequence, oh_seq);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/oh.wav"));
-
-        row = sequence_add_row_from_str(&ss->sequence, snare_seq);
-        row->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/snare.wav"));
-
-
-        sequence_print(&ss->sequence);
-    
         ss->initialized = true;
     }
 
-#if 0
-    if (ss->sound_instance_id == 0)
+    ss->sequence.bpm        = 155;
+    ss->sequence.volume     = 1.0;
+    ss->sequence.pitch      = 1.0;
+    ss->sequence.pan        = 0.0;
+    ss->sequence.cell_count = 16;
+
+    String voice1_seq = STR_LIT("0000000000000000");
+    String voice2_seq = STR_LIT("1000000010001000");
+    String piano_g    = STR_LIT("0000000000000000");
+    String kick_seq   = STR_LIT("1010000010001001");
+    String ch_seq     = STR_LIT("0000010100110010");
+    String oh_seq     = STR_LIT("1000000010000100");
+    String snare_seq  = STR_LIT("0000100000001000");
+
+    Sequence_Row* row;
+
+    row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
+    row->volume = 0.5f;
+
+    row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
+    row->volume = 0.5f;
+
+    row = sequence_set_row_from_str(&ss->sequence, 2, piano_g);
+    row->volume = 0.25f;
+
+    for (u32 cell_index = 0; cell_index < ss->sequence.cell_count; ++cell_index)
     {
-        ss->sound_instance_id = ss_play_sound(ss, ss->sound_asset_id);
+        if (cell_index % 2 == 0)
+        {
+            row->cells[cell_index].volume = 0.25f;
+            row->cells[cell_index].pan = 0.7f;
+        }
     }
-    else
-    {
-        Sound_Instance_Slot* sound_instance = sound_instance_get(&ss->instance_pool, ss->sound_instance_id);
-        sound_instance->volume = 1.0f;
-        sound_instance->pan    = 0.0f;
-        sound_instance->loop   = true;
-    }
-#else
-    
+
+    row = sequence_set_row_from_str(&ss->sequence, 3, kick_seq);
+    row = sequence_set_row_from_str(&ss->sequence, 4, ch_seq);
+    row = sequence_set_row_from_str(&ss->sequence, 5, oh_seq);
+    row = sequence_set_row_from_str(&ss->sequence, 6, snare_seq);
+
+    // sequence_print(&ss->sequence);
+
     ss_play_sequence(ss, &ss->sequence);
-#endif
 
     ss_mix(ss, out);
     
