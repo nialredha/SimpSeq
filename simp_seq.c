@@ -35,9 +35,23 @@ static bool sound_asset_is_valid(Sound_Asset_Pool* pool, u32 slot_id)
     return false;
 }
 
-static u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
+static u32 sound_asset_add(Arena* arena, Sound_Asset_Pool* pool, String filename)
 {
-    u32 slot_id;
+    printf("\nAttempting to add asset %s\n", filename.data);
+
+    // see if asset already exists and return its id if it does
+    for (u32 slot_id = pool->first_slot; slot_id != 0; slot_id = pool->slot[slot_id].next)
+    {
+        Sound_Asset_Slot slot = pool->slot[slot_id];
+
+        if (str_compare(filename, slot.filename))
+        {
+            printf("  Already exists! ID: %u\n", slot_id);
+            return slot_id;
+        }
+    }
+
+    u32 slot_id = 0;
 
     if (pool->first_free != 0)
     {
@@ -73,7 +87,7 @@ static u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
     {
         Sound_Asset_Slot* slot = &pool->slot[slot_id];
 
-        slot->filename = filename;
+        slot->filename = str_copy(arena, filename);
 
         slot->prev = pool->last_slot;
         slot->next = 0;
@@ -90,6 +104,8 @@ static u32 sound_asset_add(Sound_Asset_Pool* pool, String filename)
 
         pool->last_slot = slot_id;
         pool->used[slot_id] = true;
+
+        printf("  Success! ID: %u\n", slot_id);
     }
 
     return slot_id;
@@ -169,25 +185,28 @@ static Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool
         if (result->data.buffer == 0)
         {
             // load the sound!
-            
             String file = os_read_entire_file(result->filename);
-            Wav wav     = wav_from_data(arena, file);
 
-            Wav_Format format = wav_get_format(&wav.sub_chunks, file);
+            if (file.data != 0 && file.count > 0)
+            {
+                Wav wav = wav_from_data(arena, file);
 
-            assert(format.format_tag      == SUPPORTED_FORMAT_TAG); 
-            assert(format.bits_per_sample == SUPPORTED_BIT_DEPTH);
-            assert(format.num_channels    == SUPPORTED_CHANNEL_COUNT);
-            assert(format.sample_rate     == SUPPORTED_SAMPLE_RATE);
+                Wav_Format format = wav_get_format(&wav.sub_chunks, file);
 
-            Wav_Data data = wav_get_data(arena, &wav.sub_chunks, file);
+                assert(format.format_tag      == SUPPORTED_FORMAT_TAG); 
+                assert(format.bits_per_sample == SUPPORTED_BIT_DEPTH);
+                assert(format.num_channels    == SUPPORTED_CHANNEL_COUNT);
+                assert(format.sample_rate     == SUPPORTED_SAMPLE_RATE);
 
-            // printf("%s samples: %u\n", result->filename.data, data.size / 4);
+                Wav_Data data = wav_get_data(arena, &wav.sub_chunks, file);
 
-            result->format = format;
-            result->data   = data;
+                // printf("%s samples: %u\n", result->filename.data, data.size / 4);
 
-            os_free_file_contents(&file);
+                result->format = format;
+                result->data   = data;
+
+                os_free_file_contents(&file);
+            }
         }
     }
 
@@ -391,7 +410,7 @@ static Sequence_Row* sequence_set_row_from_str(Sequence* sequence, u32 row_id, S
         u32 cell_index = 0; 
         while (*row_str.data != 0 && cell_index < sequence->cell_count)
         {
-            // str_eat_whitespace(&row_str);
+            str_eat_whitespace(&row_str);
             String cell_str = str_advance(&row_str, 1);
 
             switch (*cell_str.data)
@@ -500,15 +519,10 @@ static void sequence_print(Sequence* sequence)
         printf("---|");
     }
     printf("\n");
-
-    // fflush(stdout);
-    // printf("\033[%dA", sequence->row_count + 2);
 }
-
 
 static void ss_init(Simp_Seq_State* ss)
 {
-    // why am I doing this - not sure.
     u8* dest = (u8*)ss;
     for (u32 byte_index = 0; byte_index < sizeof(*ss); byte_index++)
     {
@@ -517,6 +531,14 @@ static void ss_init(Simp_Seq_State* ss)
 
     arena_alloc(&ss->perm_arena, 16*1024*1024);
     arena_alloc(&ss->tran_arena, 4*1024);
+
+    return;
+}
+
+static void sequence_reset(Simp_Seq_State* ss)
+{
+    ss->sequence.cell_count = 0;
+    ss->sequence.row_count = 0;
 
     return;
 }
@@ -573,7 +595,7 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
                         u32 sound_id = ss_play_sound(ss, row->asset_id);
                         Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
 
-                        sound->volume = row->volume * cell->volume;
+                        sound->volume = sequence->volume * row->volume * cell->volume;
                         sound->pan    = row->pan;
                         sound->pitch  = row->pitch;
 
@@ -689,80 +711,96 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
     return;
 }
 
-void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
+void ss_post_load(Simp_Seq_State* ss)
 {
-    if (!ss->initialized)
-    {
-        printf("initializing simp seq!\n");
+    // initialize memory
+    ss_init(ss);
 
-        // initialize memory
-        ss_init(ss);
+    
+    return;
+}
 
-        // add assets
-        ss->sound_asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("test_track.wav"));
-        ss->pan_direction  = -1;
+void ss_post_reload(Simp_Seq_State* ss)
+{
+    sequence_reset(ss);
 
-        ss->sequence.bpm        = 180;
-        ss->sequence.volume     = 1.0;
-        ss->sequence.pitch      = 1.0;
-        ss->sequence.pan        = 0.0;
-        ss->sequence.row_count  = 0;
-        ss->sequence.cell_count = 16;
+    // add assets
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/vocals2.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/vocals4.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/ch.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/kick.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/ch.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/oh.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/snare.wav"));
 
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals1.wav"));
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/vocals5.wav"));
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/stage_grand_g.wav"));
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/kick.wav"));
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/ch.wav"));
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/oh.wav"));
-        sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->asset_pool, STR_LIT("../data/snare.wav"));
-
-        ss->initialized = true;
-    }
-
-    ss->sequence.bpm        = 160;
-    ss->sequence.volume     = 1.0;
+    ss->sequence.bpm        = 103;
+    ss->sequence.volume     = 0.8f;
     ss->sequence.pitch      = 1.0;
     ss->sequence.pan        = 0.0;
     ss->sequence.cell_count = 16;
 
-    String voice1_seq = STR_LIT("0000100100100001");
-    String voice2_seq = STR_LIT("1000000000000000");
-    String piano_g    = STR_LIT("0000000000000000");
-    String kick_seq   = STR_LIT("1010000010001001");
-    String ch_seq     = STR_LIT("0000010100110010");
-    String oh_seq     = STR_LIT("1000000010000100");
-    String snare_seq  = STR_LIT("0000100000001000");
+// #define SILENCE
+#ifdef SILENCE
+    String voice1_seq = STR_LIT("0000000000000000");
+    String voice2_seq = STR_LIT("0000000000000000");
+    String ch_0_seq   = STR_LIT("0000000000000000");
+    String kick_seq   = STR_LIT("0000000000000000");
+    String ch_seq     = STR_LIT("0000000000000000");
+    String oh_seq     = STR_LIT("0000000000000000");
+    String snare_seq  = STR_LIT("0000000000000000");
+#else
+    String voice1_seq = STR_LIT("0000 0000 0000 0001");
+    String voice2_seq = STR_LIT("0000 0001 0000 0000");
+    String ch_0_seq   = STR_LIT("0101 0010 0101 0010");
+    String kick_seq   = STR_LIT("1000 0000 1010 0000");
+    String ch_seq     = STR_LIT("0000 0101 0000 0100");
+    String oh_seq     = STR_LIT("0010 0000 0010 0001");
+    String snare_seq  = STR_LIT("0000 1000 0000 1000");
+#endif
+#undef SILENCE
 
     Sequence_Row* row;
 
     row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
-    row->volume = 0.25f;
+    row->volume = 0.1f;
 
     row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
-    row->volume = 0.25f;
+    row->volume = 0.1f;
 
-    row = sequence_set_row_from_str(&ss->sequence, 2, piano_g);
-    row->volume = 0.25f;
+    row = sequence_set_row_from_str(&ss->sequence, 2, ch_0_seq);
+    row->volume = 0.75f;
 
+#if 1
     for (u32 cell_index = 0; cell_index < ss->sequence.cell_count; ++cell_index)
     {
         if (cell_index % 2 == 0)
         {
-            row->cells[cell_index].volume = 0.25f;
-            row->cells[cell_index].pan = 0.7f;
+            row->cells[cell_index].volume = 0.5f;
+            row->cells[cell_index].pan = 0.9f;
         }
     }
+#endif
 
     row = sequence_set_row_from_str(&ss->sequence, 3, kick_seq);
+    row->volume = 0.3f;
+
     row = sequence_set_row_from_str(&ss->sequence, 4, ch_seq);
+    row->volume = 0.2f;
+
     row = sequence_set_row_from_str(&ss->sequence, 5, oh_seq);
+    row->volume = 0.2f;
+
     row = sequence_set_row_from_str(&ss->sequence, 6, snare_seq);
+    row->volume = 0.2f;
 
     // sequence_print(&ss->sequence);
 
-    ss_play_sequence(ss, &ss->sequence);
+    return;
+}
 
+void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
+{
+    ss_play_sequence(ss, &ss->sequence);
     ss_mix(ss, out);
     
     return;

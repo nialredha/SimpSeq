@@ -21,6 +21,9 @@
 
 #include "simp_seq.h"
 
+typedef void (SS_Post_Load)(Simp_Seq_State* state);
+typedef void (SS_Post_Reload)(Simp_Seq_State* state);
+
 typedef void (SS_Update)(Simp_Seq_State* state, Ring_Buffer* output);
 
 typedef struct
@@ -46,7 +49,10 @@ s32 entry_point(s32 arg_count, char** args)
     ss_dll.filename = STR_LIT("ss.dll");
 
     Simp_Seq_State ss_state  = {0};
-    SS_Update*     ss_update = 0;
+
+    SS_Post_Load*   ss_post_load   = 0;
+    SS_Post_Reload* ss_post_reload = 0;
+    SS_Update*      ss_update      = 0;
 
     Ring_Buffer output_buffer = rb_create(9600*4); // TODO[nr] @dobetter
 
@@ -77,7 +83,13 @@ s32 entry_point(s32 arg_count, char** args)
     }
 
     os_win32_reload_dll(&ss_dll);
-    ss_update = (SS_Update*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_update"));
+
+    ss_post_load   = (SS_Post_Load*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_post_load"));
+    ss_post_reload = (SS_Post_Reload*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_post_reload"));
+    ss_update      = (SS_Update*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_update"));
+
+    if (ss_post_load)   { ss_post_load(&ss_state);   }
+    if (ss_post_reload) { ss_post_reload(&ss_state); }
 
     while (true)
     {
@@ -86,17 +98,20 @@ s32 entry_point(s32 arg_count, char** args)
         // TODO[nr] @move: to win32 layer
         if (CompareFileTime(&ss_dll.last_write_time, &current_write_time) != 0)
         {
-            // printf("Detected change! Reloading %s\n", ss_dll.filename.data);
-            // SYSTEMTIME last_sys_time;
-            // SYSTEMTIME curr_sys_time;
-            // FileTimeToSystemTime(&ss_dll.last_write_time, &last_sys_time);
-            // FileTimeToSystemTime(&current_write_time, &curr_sys_time);
-            // printf("Last: %02uh:%02um:%02us:%04ums\n", last_sys_time.wHour, last_sys_time.wMinute, last_sys_time.wSecond, last_sys_time.wMilliseconds);
-            // printf("Curr: %02uh:%02um:%02us:%04ums\n", curr_sys_time.wHour, curr_sys_time.wMinute, curr_sys_time.wSecond, curr_sys_time.wMilliseconds);
+            printf("\nDetected change! Reloading %s\n", ss_dll.filename.data);
+            SYSTEMTIME last_sys_time;
+            SYSTEMTIME curr_sys_time;
+            FileTimeToSystemTime(&ss_dll.last_write_time, &last_sys_time);
+            FileTimeToSystemTime(&current_write_time, &curr_sys_time);
+            printf("  Last: %02uh:%02um:%02us:%04ums\n", last_sys_time.wHour, last_sys_time.wMinute, last_sys_time.wSecond, last_sys_time.wMilliseconds);
+            printf("  Curr: %02uh:%02um:%02us:%04ums\n", curr_sys_time.wHour, curr_sys_time.wMinute, curr_sys_time.wSecond, curr_sys_time.wMilliseconds);
 
             if (os_win32_reload_dll(&ss_dll))
             {
                 printf("Reloaded %s!\n", ss_dll.filename.data);
+
+                ss_post_reload = (SS_Post_Reload*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_post_reload"));
+                if (ss_post_reload) { ss_post_reload(&ss_state); }
             }
 
             ss_update = (SS_Update*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_update"));

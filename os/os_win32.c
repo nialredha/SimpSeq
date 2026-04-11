@@ -135,9 +135,8 @@ static bool os_win32_reload_dll(OS_Win32_DLL* dll)
         os_win32_unload_dll(dll);
     }
 
-    result = CopyFileA(dll->filename.data, dll_temp_name, FALSE);
-
     dll->last_write_time = os_win32_get_last_write_time_of_file(dll->filename);
+    result = CopyFileA(dll->filename.data, dll_temp_name, FALSE);
     dll->handle = LoadLibraryA(dll_temp_name);
 
     return result;

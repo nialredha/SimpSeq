@@ -104,23 +104,20 @@ typedef struct
 
 typedef struct
 {
-    bool initialized;
-
-    u32 sound_asset_id;
-    u32 sound_instance_id;
-    s32 pan_direction;
-
     Sequence sequence;
-
-    Arena perm_arena;
-    Arena tran_arena;
 
     Sound_Asset_Pool    asset_pool;
     Sound_Instance_Pool instance_pool;
 
+    Arena perm_arena;
+    Arena tran_arena;
+
     u32 total_samples_mixed;
     float mix_buffer[9600]; // TODO[nr] @better: assuming 100ms 48KHz stereo 
 } Simp_Seq_State;
+
+void ss_post_load  (Simp_Seq_State* ss);
+void ss_post_reload(Simp_Seq_State* ss);
 
 void ss_update(Simp_Seq_State* ss, Ring_Buffer* out);
 

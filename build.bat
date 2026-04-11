@@ -22,7 +22,7 @@ REM cl %cl_includes% ..\wav_play.c %c_flags% /link ole32.lib /out:"wav_play.exe"
 
 REM WAV Sound Mixer
 set l_flags=-incremental:no -opt:ref
-set export_funcs=/EXPORT:ss_update
+set export_funcs=/EXPORT:ss_post_load /EXPORT:ss_post_reload /EXPORT:ss_update 
 
 cl %cl_includes% ..\simp_seq.c %c_flags% /LD /link %l_flags% /DLL %export_funcs% /out:"ss.dll" ole32.lib winmm.lib
 cl %cl_includes% ..\simp_seq_entry_point.c %c_flags% /link /out:"simp_seq.exe" ole32.lib winmm.lib
