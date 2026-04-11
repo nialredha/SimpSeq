@@ -3,6 +3,8 @@
 #include "base_string.h"
 #include "base_ring_buffer.h"
 
+#include "slot_pool.h"
+
 #include "wav.h"
 #include "wav_dump_utils.h"
 
@@ -12,6 +14,8 @@
 #include "base_arena.c"
 #include "base_string.c"
 #include "base_ring_buffer.c"
+
+#include "slot_pool.c"
 
 #include "wav.c"
 #include "wav_dump_utils.c"
@@ -23,164 +27,69 @@
 
 #include "simp_seq.h"
 
-static bool sound_asset_is_valid(Sound_Asset_Pool* pool, u32 slot_id)
-{
-    if (slot_id > 0 && 
-        slot_id < MAX_SOUND_ASSET_SLOTS && 
-        pool->used[slot_id])
-    {
-        return true;
-    }
-    
-    return false;
-}
-
-static u32 sound_asset_add(Arena* arena, Sound_Asset_Pool* pool, String filename)
+static u32 sound_asset_add(Arena* arena, Sound_Asset_Slop* asset_slop, String filename)
 {
     printf("\nAttempting to add asset %s\n", filename.data);
 
     // see if asset already exists and return its id if it does
-    for (u32 slot_id = pool->first_slot; slot_id != 0; slot_id = pool->slot[slot_id].next)
+    for (u32 slot_id = asset_slop->slop.first_slot; slot_id != 0; slot_id = asset_slop->slop.slots[slot_id].next)
     {
-        Sound_Asset_Slot slot = pool->slot[slot_id];
+        Sound_Asset* asset = &asset_slop->assets[slot_id];
 
-        if (str_compare(filename, slot.filename))
+        if (str_compare(filename, asset->filename))
         {
             printf("  Already exists! ID: %u\n", slot_id);
             return slot_id;
         }
     }
 
-    u32 slot_id = 0;
+    u32 slot_id = slop_slot_add(&asset_slop->slop);
 
-    if (pool->first_free != 0)
-    {
-        // prioritize freed slot we can reuse
-        slot_id = pool->first_free;
-        pool->first_free = pool->slot[slot_id].next;
-
-        if (pool->first_free == 0)
-        {
-            pool->last_free = 0;
-        }
-    }
-    else if (pool->first_unused != 0)
-    {
-        // no free slots to reuse, but we have unused slots
-        slot_id = pool->first_unused++;
-
-    }
-    else if (pool->first_slot == 0)
-    {
-        // no unused slot because the list is empty!
-        slot_id = ++pool->first_unused;
-        pool->first_unused++;
-    }
-    else
-    {
-        // uh oh, we are all full :(
-
-        slot_id = 0;
-    }
-    
     if (slot_id != 0)
     {
-        Sound_Asset_Slot* slot = &pool->slot[slot_id];
+        Sound_Asset* asset = &asset_slop->assets[slot_id];
 
-        slot->filename = str_copy(arena, filename);
-
-        slot->prev = pool->last_slot;
-        slot->next = 0;
-
-        if (pool->last_slot != 0)
-        {
-            // update last entry to point to new entry
-            pool->slot[pool->last_slot].next = slot_id;
-        }
-        else
-        {
-            pool->first_slot = slot_id;
-        }
-
-        pool->last_slot = slot_id;
-        pool->used[slot_id] = true;
-
+        asset->filename = str_copy(arena, filename);
         printf("  Success! ID: %u\n", slot_id);
     }
 
     return slot_id;
 }
 
-static void sound_asset_rem(Sound_Asset_Pool* pool, u32 slot_id)
+static void sound_asset_rem(Sound_Asset_Slop* asset_slop, u32 slot_id)
 {
-    if (sound_asset_is_valid(pool, slot_id))
+    if (slop_slot_is_valid(&asset_slop->slop, slot_id))
     {
-        // remove from active list
-        Sound_Asset_Slot* slot = &pool->slot[slot_id];
+        // clear data
+        Sound_Asset* asset = &asset_slop->assets[slot_id];
+        *asset = (Sound_Asset){0};
 
-        if (slot->prev != 0)
-        {
-            // connect slot's previous to next
-            pool->slot[slot->prev].next = slot->next;
-        }
-        else
-        {
-            // slot didn't have a previous so it must be the first
-            pool->first_slot = slot->next;
-        }
-
-        if (slot->next != 0)
-        {
-            // connect slot's next to previous
-            pool->slot[slot->next].prev = slot->prev;
-        }
-        else
-        {
-            // slot didn't have a next so it must be the last
-            pool->last_slot = slot->prev;
-        }
-
-        pool->used[slot_id] = false;
-
-        // append slot to free list
-        slot->next = 0;
-
-        if (pool->last_free != 0)
-        {
-            // append to end of the list
-            pool->slot[pool->last_free].next = slot_id;
-        }
-        else
-        {
-            // list is empty, must feel good to be first
-            pool->first_free = slot_id;
-        }
-
-        pool->last_free = slot_id;
+        // remove from active slot pool
+        slop_slot_rem(&asset_slop->slop, slot_id);
     }
 
     return;
 }
 
-static Sound_Asset_Slot* sound_asset_get(Sound_Asset_Pool* pool, u32 slot_id)
+static Sound_Asset* sound_asset_get(Sound_Asset_Slop* asset_slop, u32 slot_id)
 {
-    Sound_Asset_Slot* result = &pool->slot[0];
+    Sound_Asset* result = &asset_slop->assets[0];
 
-    if (sound_asset_is_valid(pool, slot_id))
+    if (slop_slot_is_valid(&asset_slop->slop, slot_id))
     {
-        result = &pool->slot[slot_id];
+        result = &asset_slop->assets[slot_id];
     }
 
     return result;
 }
 
-static Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool* pool, u32 slot_id)
+static Sound_Asset* sound_asset_find_or_load(Arena* arena, Sound_Asset_Slop* asset_slop, u32 slot_id)
 {
-    Sound_Asset_Slot* result = &pool->slot[0];
+    Sound_Asset* result = &asset_slop->assets[0];
 
-    if (sound_asset_is_valid(pool, slot_id))
+    if (slop_slot_is_valid(&asset_slop->slop, slot_id))
     {
-        result = &pool->slot[slot_id];
+        result = &asset_slop->assets[slot_id];
 
         if (result->data.buffer == 0)
         {
@@ -213,141 +122,46 @@ static Sound_Asset_Slot* sound_asset_find_or_load(Arena* arena, Sound_Asset_Pool
     return result;
 }
 
-static bool sound_instance_is_valid(Sound_Instance_Pool* pool, u32 slot_id)
+static u32 sound_add(Sound_Slop* sound_slop, u32 asset_id)
 {
-    if (slot_id > 0 && 
-        slot_id < MAX_SOUND_INSTANCE_SLOTS && 
-        pool->used[slot_id])
-    {
-        return true;
-    }
-    
-    return false;
-}
+    u32 slot_id = slop_slot_add(&sound_slop->slop);
 
-static u32 sound_instance_add(Sound_Instance_Pool* pool, u32 asset_id)
-{
-    u32 slot_id;
-
-    if (pool->first_free != 0)
-    {
-        // prioritize freed slot we can reuse
-        slot_id = pool->first_free;
-        pool->first_free = pool->slot[slot_id].next;
-
-        if (pool->first_free == 0)
-        {
-            pool->last_free = 0;
-        }
-    }
-    else if (pool->first_unused != 0)
-    {
-        // no free slots to reuse, but we have unused slots
-        slot_id = pool->first_unused++;
-
-    }
-    else if (pool->first_slot == 0)
-    {
-        // no unused slot because the list is empty!
-        slot_id = ++pool->first_unused;
-        pool->first_unused++;
-    }
-    else
-    {
-        // uh oh, we are all full :(
-
-        slot_id = 0;
-    }
-    
     if (slot_id != 0)
     {
-        Sound_Instance_Slot* slot = &pool->slot[slot_id];
-
-        slot->asset_id = asset_id;
-        slot->playhead = 0;
-        slot->volume   = 0.5f;
-        slot->pan      = 0.0f;
-        slot->pitch    = 1.0f;
-        slot->loop     = false;
-
-        slot->prev = pool->last_slot;
-        slot->next = 0;
-
-        if (pool->last_slot != 0)
-        {
-            // update last entry to point to new entry
-            pool->slot[pool->last_slot].next = slot_id;
-        }
-        else
-        {
-            pool->first_slot = slot_id;
-        }
-
-        pool->last_slot = slot_id;
-        pool->used[slot_id] = true;
+        Sound* sound = &sound_slop->sounds[slot_id];
+        sound->asset_id = asset_id;
+        sound->playhead = 0;
+        sound->volume   = 0.5f;
+        sound->pan      = 0.0f;
+        sound->pitch    = 1.0f;
+        sound->loop     = false;
     }
 
     return slot_id;
 }
 
-static void sound_instance_rem(Sound_Instance_Pool* pool, u32 slot_id)
+static void sound_rem(Sound_Slop* sound_slop, u32 slot_id)
 {
-    if (sound_instance_is_valid(pool, slot_id))
+    if (slop_slot_is_valid(&sound_slop->slop, slot_id))
     {
-        // remove from active list
-        Sound_Instance_Slot* slot = &pool->slot[slot_id];
+        // clear data
+        Sound* sound = &sound_slop->sounds[slot_id];
+        *sound = (Sound){0};
 
-        if (slot->prev != 0)
-        {
-            // connect slot's previous to next
-            pool->slot[slot->prev].next = slot->next;
-        }
-        else
-        {
-            // slot didn't have a previous so it must be the first
-            pool->first_slot = slot->next;
-        }
-
-        if (slot->next != 0)
-        {
-            // connect slot's next to previous
-            pool->slot[slot->next].prev = slot->prev;
-        }
-        else
-        {
-            // slot didn't have a next so it must be the last
-            pool->last_slot = slot->prev;
-        }
-
-        pool->used[slot_id] = false;
-
-        // append slot to free list
-        slot->next = 0;
-
-        if (pool->last_free != 0)
-        {
-            // append to end of the list
-            pool->slot[pool->last_free].next = slot_id;
-        }
-        else
-        {
-            // list is empty, must feel good to be first
-            pool->first_free = slot_id;
-        }
-
-        pool->last_free = slot_id;
+        // remove from active slot pool
+        slop_slot_rem(&sound_slop->slop, slot_id);
     }
 
     return;
 }
 
-static Sound_Instance_Slot* sound_instance_get(Sound_Instance_Pool* pool, u32 slot_id)
+static Sound* sound_get(Sound_Slop* sound_slop, u32 slot_id)
 {
-    Sound_Instance_Slot* result = &pool->slot[0];
+    Sound* result = &sound_slop->sounds[0];
 
-    if (sound_instance_is_valid(pool, slot_id))
+    if (slop_slot_is_valid(&sound_slop->slop, slot_id))
     {
-        result = &pool->slot[slot_id];
+        result = &sound_slop->sounds[slot_id];
     }
 
     return result;
@@ -545,21 +359,21 @@ static void sequence_reset(Simp_Seq_State* ss)
 
 static u32 ss_play_sound(Simp_Seq_State* ss, u32 asset_id)
 {
-    u32 instance_id = 0;
+    u32 sound_id = 0;
 
-    Sound_Asset_Slot* asset = sound_asset_find_or_load(&ss->perm_arena, &ss->asset_pool, asset_id);
+    Sound_Asset* asset = sound_asset_find_or_load(&ss->perm_arena, &ss->asset_slop, asset_id);
 
     if (asset->data.buffer != 0)
     {
-        instance_id = sound_instance_add(&ss->instance_pool, asset_id);
+        sound_id = sound_add(&ss->sound_slop, asset_id);
     }
 
-    return instance_id;
+    return sound_id;
 }
 
-static void ss_stop_sound(Simp_Seq_State* ss, u32 instance_id)
+static void ss_stop_sound(Simp_Seq_State* ss, u32 sound_id)
 {
-    sound_instance_rem(&ss->instance_pool, instance_id);
+    sound_rem(&ss->sound_slop, sound_id);
 
     return;
 }
@@ -593,7 +407,7 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
                     if (cell->active)
                     {
                         u32 sound_id = ss_play_sound(ss, row->asset_id);
-                        Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
+                        Sound* sound = sound_get(&ss->sound_slop, sound_id);
 
                         sound->volume = sequence->volume * row->volume * cell->volume;
                         sound->pan    = row->pan;
@@ -641,10 +455,10 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
         *mix_buffer++ = 0;
     }
 
-    for (u32 sound_id = ss->instance_pool.first_slot; sound_id != 0; )
+    for (u32 sound_id = ss->sound_slop.slop.first_slot; sound_id != 0; )
     {
-        Sound_Instance_Slot* sound = sound_instance_get(&ss->instance_pool, sound_id);
-        Sound_Asset_Slot*    asset = sound_asset_get(&ss->asset_pool, sound->asset_id);
+        Sound*       sound = sound_get(&ss->sound_slop, sound_id);
+        Sound_Asset* asset = sound_asset_get(&ss->asset_slop, sound->asset_id);
 
         u32 byte_index       = sound->playhead * bytes_per_sample;
         f32* asset_data      = (f32*)&asset->data.buffer[byte_index];
@@ -681,7 +495,7 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
             }
         }
 
-        u32 next_sound_id = sound_instance_get(&ss->instance_pool, sound_id)->next;
+        u32 next_sound_id = ss->sound_slop.slop.slots[sound_id].next;
 
         if (sound->playhead >= samples_in_asset)
         {
@@ -725,13 +539,13 @@ void ss_post_reload(Simp_Seq_State* ss)
     sequence_reset(ss);
 
     // add assets
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/vocals2.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/vocals4.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/ch.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/kick.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/ch.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/oh.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_pool, STR_LIT("../data/snare.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/vocals2.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/vocals4.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/ch.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/kick.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/ch.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/oh.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/snare.wav"));
 
     ss->sequence.bpm        = 103;
     ss->sequence.volume     = 0.8f;
@@ -753,8 +567,8 @@ void ss_post_reload(Simp_Seq_State* ss)
     String voice2_seq = STR_LIT("0000 0001 0000 0000");
     String ch_0_seq   = STR_LIT("0101 0010 0101 0010");
     String kick_seq   = STR_LIT("1000 0000 1010 0000");
-    String ch_seq     = STR_LIT("0000 0101 0000 0100");
-    String oh_seq     = STR_LIT("0010 0000 0010 0001");
+    String ch_seq     = STR_LIT("1111 1111 1111 1111");
+    String oh_seq     = STR_LIT("0010 1100 0010 1001");
     String snare_seq  = STR_LIT("0000 1000 0000 1000");
 #endif
 #undef SILENCE
@@ -785,10 +599,10 @@ void ss_post_reload(Simp_Seq_State* ss)
     row->volume = 0.3f;
 
     row = sequence_set_row_from_str(&ss->sequence, 4, ch_seq);
-    row->volume = 0.2f;
+    row->volume = 0.8f;
 
     row = sequence_set_row_from_str(&ss->sequence, 5, oh_seq);
-    row->volume = 0.2f;
+    row->volume = 0.4f;
 
     row = sequence_set_row_from_str(&ss->sequence, 6, snare_seq);
     row->volume = 0.2f;

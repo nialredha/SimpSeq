@@ -3,6 +3,8 @@
 #include "base_string.h"
 #include "base_ring_buffer.h"
 
+#include "slot_pool.h"
+
 #include "wav.h"
 #include "wav_dump_utils.h"
 

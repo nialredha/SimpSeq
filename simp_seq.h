@@ -14,34 +14,21 @@
 
 typedef struct
 {
-    u32 next;
-    u32 prev;
-
     String filename;
 
     Wav_Format format;
     Wav_Data   data;
-} Sound_Asset_Slot;
+} Sound_Asset;
 
 typedef struct
 {
-    u32 first_slot;
-    u32 last_slot;
+    Slop slop;
 
-    u32 first_free;
-    u32 last_free;
-
-    u32 first_unused;
-
-    Sound_Asset_Slot slot[MAX_SOUND_ASSET_SLOTS];
-    bool             used[MAX_SOUND_ASSET_SLOTS];
-} Sound_Asset_Pool;
+    Sound_Asset assets[SLOP_MAX_SLOTS];
+} Sound_Asset_Slop;
 
 typedef struct
 {
-    u32 next;
-    u32 prev;
-
     u32 asset_id;
     u32 playhead;
 
@@ -50,21 +37,14 @@ typedef struct
     f32 pitch;
 
     bool loop;
-} Sound_Instance_Slot;
+} Sound;
 
 typedef struct
 {
-    u32 first_slot;
-    u32 last_slot;
+    Slop slop;
 
-    u32 first_free;
-    u32 last_free;
-
-    u32 first_unused;
-
-    Sound_Instance_Slot slot[MAX_SOUND_INSTANCE_SLOTS];
-    bool                used[MAX_SOUND_INSTANCE_SLOTS];
-} Sound_Instance_Pool;
+    Sound sounds[SLOP_MAX_SLOTS];
+} Sound_Slop;
 
 typedef struct
 {
@@ -106,8 +86,8 @@ typedef struct
 {
     Sequence sequence;
 
-    Sound_Asset_Pool    asset_pool;
-    Sound_Instance_Pool instance_pool;
+    Sound_Asset_Slop asset_slop;
+    Sound_Slop       sound_slop;
 
     Arena perm_arena;
     Arena tran_arena;
