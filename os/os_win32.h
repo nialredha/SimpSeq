@@ -14,7 +14,7 @@ typedef struct
     FILETIME    last_write_time;
 } OS_Win32_DLL;
 
-static void  os_win32_reload_dll(OS_Win32_DLL* dll);
+static bool  os_win32_reload_dll(OS_Win32_DLL* dll);
 static void  os_win32_unload_dll(OS_Win32_DLL* dll);
 
 static void* os_win32_get_function_pointer(OS_Win32_DLL* dll, String function_name);

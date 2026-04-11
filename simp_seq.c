@@ -720,14 +720,14 @@ void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
         ss->initialized = true;
     }
 
-    ss->sequence.bpm        = 155;
+    ss->sequence.bpm        = 160;
     ss->sequence.volume     = 1.0;
     ss->sequence.pitch      = 1.0;
     ss->sequence.pan        = 0.0;
     ss->sequence.cell_count = 16;
 
-    String voice1_seq = STR_LIT("0000000000000000");
-    String voice2_seq = STR_LIT("1000000010001000");
+    String voice1_seq = STR_LIT("0000100100100001");
+    String voice2_seq = STR_LIT("1000000000000000");
     String piano_g    = STR_LIT("0000000000000000");
     String kick_seq   = STR_LIT("1010000010001001");
     String ch_seq     = STR_LIT("0000010100110010");
@@ -737,10 +737,10 @@ void ss_update(Simp_Seq_State* ss, Ring_Buffer* out)
     Sequence_Row* row;
 
     row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
-    row->volume = 0.5f;
+    row->volume = 0.25f;
 
     row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
-    row->volume = 0.5f;
+    row->volume = 0.25f;
 
     row = sequence_set_row_from_str(&ss->sequence, 2, piano_g);
     row->volume = 0.25f;

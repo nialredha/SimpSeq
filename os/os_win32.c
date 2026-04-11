@@ -123,8 +123,10 @@ void os_sleep_ms(u32 milliseconds)
 // DLL
 //
 
-static void os_win32_reload_dll(OS_Win32_DLL* dll)
+static bool os_win32_reload_dll(OS_Win32_DLL* dll)
 {
+    bool result = false;
+
     // TODO[nr]: prepend the dll name to this
     char* dll_temp_name = "temp.dll";
 
@@ -133,17 +135,12 @@ static void os_win32_reload_dll(OS_Win32_DLL* dll)
         os_win32_unload_dll(dll);
     }
 
-    bool result = CopyFileA(dll->filename.data, dll_temp_name, FALSE);
-    if (!result)
-    {
-        // Failed to copy file! Early exit and hopefully the caller will try again!
-        return;
-    }
+    result = CopyFileA(dll->filename.data, dll_temp_name, FALSE);
 
     dll->last_write_time = os_win32_get_last_write_time_of_file(dll->filename);
-    dll->handle          = LoadLibraryA(dll_temp_name);
+    dll->handle = LoadLibraryA(dll_temp_name);
 
-    return;
+    return result;
 }
 
 static void* os_win32_get_function_pointer(OS_Win32_DLL* dll, String function_name)
