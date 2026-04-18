@@ -27,6 +27,11 @@
 
 #include "simp_seq.h"
 
+static f32 lerp(f32 a, f32 b, f32 t)
+{
+    return (a * (1.0f - t)) + (b * t);
+}
+
 static u32 sound_asset_add(Arena* arena, Sound_Asset_Slop* asset_slop, String filename)
 {
     printf("\nAttempting to add asset %s\n", filename.data);
@@ -132,8 +137,8 @@ static u32 sound_add(Sound_Slop* sound_slop, u32 asset_id)
         sound->asset_id = asset_id;
         sound->playhead = 0;
         sound->volume   = 0.5f;
-        sound->pan      = 0.0f;
         sound->pitch    = 1.0f;
+        sound->pan      = 0.0f;
         sound->loop     = false;
     }
 
@@ -171,9 +176,9 @@ static void sequence_init(Sequence* sequence, f32 bpm, u32 num_steps)
 {
     sequence->bpm = bpm;
 
-    sequence->volume = 1.0;
-    sequence->pitch  = 1.0;
-    sequence->pan    = 0.0;
+    sequence->volume = 1.0f;
+    sequence->pitch  = 1.0f;
+    sequence->pan    = 0.0f;
 
     sequence->cell_count = num_steps;
 
@@ -410,8 +415,12 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
                         Sound* sound = sound_get(&ss->sound_slop, sound_id);
 
                         sound->volume = sequence->volume * row->volume * cell->volume;
-                        sound->pan    = row->pan;
-                        sound->pitch  = row->pitch;
+
+                        f32 pan     = row->pan + cell->pan;
+                        pan         = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
+                        sound->pan  = pan;
+
+                        sound->pitch  = row->pitch * cell->pitch;
 
                         // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, sequence->rows[row_index].asset_id, sound->playhead);
                     }
@@ -422,14 +431,13 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
         }
         else
         {
-            // TODO[nr] @scale
-
             // hit the end of the sequence
-            ss->total_samples_mixed = 0;
-            sequence->playhead = 0;
 
-            // printf("loop!\n");
-            return;
+            if (sequence->loop)
+            {
+                ss->total_samples_mixed = 0;
+                sequence->playhead = 0;
+            }
         }
     }
 }
@@ -468,32 +476,51 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
 
         mix_buffer = ss->mix_buffer;
 
-        for (u32 mix_index = 0; mix_index < samples_to_mix; mix_index += 2)
-        {
-            if (sound->playhead < samples_in_asset)
-            {
-                // TODO[nr] @study: currently doing equal power panning, but that makes center quieter...
+        // TODO[nr] @study: currently doing equal power panning, but that makes center quieter...
 #if 0
-                f32 pan_0 = (1 - sound->pan);
-                f32 pan_1 = (sound->pan);
+        f32 pan_0 = (1 - sound->pan);
+        f32 pan_1 = (sound->pan);
 #else
-                f32 pan_0 = sound->pan < 0 ? 1.0f : 1 - sound->pan;
-                f32 pan_1 = sound->pan > 0 ? 1.0f : 1 + sound->pan;
+        f32 pan_0 = sound->pan < 0 ? 1.0f : 1 - sound->pan;
+        f32 pan_1 = sound->pan > 0 ? 1.0f : 1 + sound->pan;
 #endif
 
-                mix_buffer[0] += (asset_data[0] * sound->volume * pan_0);
-                mix_buffer[1] += (asset_data[1] * sound->volume * pan_1);
+        u32 sample_index = 0;
+        f32 d_sample = sound->pitch;
 
+        for (f32 frame_pos = 0; frame_pos < (f32)samples_to_mix/2; frame_pos += d_sample)
+        // for (u32 mix_index = 0; mix_index < samples_to_mix; mix_index += 2)
+        {
+            u32 frame_index = (u32)(frame_pos);
+            sample_index = frame_index * 2;
+
+            if (sound->playhead + sample_index < samples_in_asset)
+            {
+                f32 frac = frame_pos - (f32)frame_index;
+
+                f32 sample_0 = asset_data[sample_index];
+                f32 sample_1 = asset_data[sample_index+1];
+
+                if (sound->playhead + sample_index + 2 < samples_in_asset)
+                {
+                    f32 sample_2 = asset_data[sample_index + 2];
+                    f32 sample_3 = asset_data[sample_index + 3];
+
+                    sample_0 = lerp(sample_0, sample_2, frac);
+                    sample_1 = lerp(sample_1, sample_3, frac);
+                }               
+
+                mix_buffer[0] += (sample_0 * sound->volume * pan_0);
+                mix_buffer[1] += (sample_1 * sound->volume * pan_1);
                 mix_buffer += 2;
-                asset_data += 2;
-
-                sound->playhead += 2;
             }
             else
             {
                 break;
             }
         }
+
+        sound->playhead += sample_index;
 
         u32 next_sound_id = ss->sound_slop.slop.slots[sound_id].next;
 
@@ -508,7 +535,6 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
                 // printf("stopping sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, sound->asset_id, sound->playhead);
                 ss_stop_sound(ss, sound_id);
             }
-            
         }
 
         sound_id = next_sound_id;
@@ -529,8 +555,6 @@ void ss_post_load(Simp_Seq_State* ss)
 {
     // initialize memory
     ss_init(ss);
-
-    
     return;
 }
 
@@ -549,20 +573,22 @@ void ss_post_reload(Simp_Seq_State* ss)
 
     ss->sequence.bpm        = 103;
     ss->sequence.volume     = 0.8f;
-    ss->sequence.pitch      = 1.0;
-    ss->sequence.pan        = 0.0;
+    ss->sequence.pitch      = 1.0f;
+    ss->sequence.pan        = 0.0f;
     ss->sequence.cell_count = 16;
 
-// #define SILENCE
-#ifdef SILENCE
-    String voice1_seq = STR_LIT("0000000000000000");
-    String voice2_seq = STR_LIT("0000000000000000");
-    String ch_0_seq   = STR_LIT("0000000000000000");
-    String kick_seq   = STR_LIT("0000000000000000");
-    String ch_seq     = STR_LIT("0000000000000000");
-    String oh_seq     = STR_LIT("0000000000000000");
-    String snare_seq  = STR_LIT("0000000000000000");
+    ss->sequence.loop = true;
+
+#if 1
+    String voice1_seq = STR_LIT("0000 0000 0000 0001");
+    String voice2_seq = STR_LIT("0000 0001 0000 0000");
+    String ch_0_seq   = STR_LIT("0000 0000 0000 0000");
+    String kick_seq   = STR_LIT("0000 0000 0000 0000");
+    String ch_seq     = STR_LIT("0000 0000 0000 0000");
+    String oh_seq     = STR_LIT("0000 0000 0000 0000");
+    String snare_seq  = STR_LIT("0000 0000 0000 0000");
 #else
+
     String voice1_seq = STR_LIT("0000 0000 0000 0001");
     String voice2_seq = STR_LIT("0000 0001 0000 0000");
     String ch_0_seq   = STR_LIT("0101 0010 0101 0010");
@@ -571,12 +597,12 @@ void ss_post_reload(Simp_Seq_State* ss)
     String oh_seq     = STR_LIT("0010 1100 0010 1001");
     String snare_seq  = STR_LIT("0000 1000 0000 1000");
 #endif
-#undef SILENCE
 
     Sequence_Row* row;
 
     row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
     row->volume = 0.1f;
+    row->pitch  = 0.8f;
 
     row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
     row->volume = 0.1f;
@@ -584,7 +610,6 @@ void ss_post_reload(Simp_Seq_State* ss)
     row = sequence_set_row_from_str(&ss->sequence, 2, ch_0_seq);
     row->volume = 0.75f;
 
-#if 1
     for (u32 cell_index = 0; cell_index < ss->sequence.cell_count; ++cell_index)
     {
         if (cell_index % 2 == 0)
@@ -593,7 +618,6 @@ void ss_post_reload(Simp_Seq_State* ss)
             row->cells[cell_index].pan = 0.9f;
         }
     }
-#endif
 
     row = sequence_set_row_from_str(&ss->sequence, 3, kick_seq);
     row->volume = 0.3f;
@@ -607,7 +631,7 @@ void ss_post_reload(Simp_Seq_State* ss)
     row = sequence_set_row_from_str(&ss->sequence, 6, snare_seq);
     row->volume = 0.2f;
 
-    // sequence_print(&ss->sequence);
+    sequence_print(&ss->sequence);
 
     return;
 }

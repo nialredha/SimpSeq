@@ -77,7 +77,8 @@ typedef struct
     u32 cell_count;
     u32 row_count;
 
-    u32 playhead;
+    u32  playhead;
+    bool loop;
 
     Sequence_Row rows[MAX_SEQUENCE_ROWS];
 } Sequence;
@@ -93,7 +94,7 @@ typedef struct
     Arena tran_arena;
 
     u32 total_samples_mixed;
-    float mix_buffer[9600]; // TODO[nr] @better: assuming 100ms 48KHz stereo 
+    f32 mix_buffer[9600]; // TODO[nr] @better: assuming 100ms 48KHz stereo 
 } Simp_Seq_State;
 
 void ss_post_load  (Simp_Seq_State* ss);
