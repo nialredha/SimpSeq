@@ -12,7 +12,7 @@ static bool slop_slot_is_valid(Slop* slop, u32 slot_id)
 
 static u32 slop_slot_add(Slop* slop)
 {
-    printf("\nAttempting to add slot...\n");
+    // printf("\nAttempting to add slot...\n");
 
     u32 slot_id = 0;
 
@@ -65,7 +65,7 @@ static u32 slop_slot_add(Slop* slop)
 
         slop->last_slot = slot_id;
 
-        printf("  Success! ID: %u\n", slot_id);
+        // printf("  Success! ID: %u\n", slot_id);
     }
 
     return slot_id;
@@ -73,7 +73,7 @@ static u32 slop_slot_add(Slop* slop)
 
 static void slop_slot_rem(Slop* slop, u32 slot_id)
 {
-    printf("\nAttempting to rem slot %u...\n", slot_id);
+    // printf("\nAttempting to rem slot %u...\n", slot_id);
 
     if (slop_slot_is_valid(slop, slot_id))
     {
@@ -122,7 +122,7 @@ static void slop_slot_rem(Slop* slop, u32 slot_id)
 
         slop->last_free = slot_id;
 
-        printf("  Success!\n");
+        // printf("  Success!\n");
     }
 
     return;

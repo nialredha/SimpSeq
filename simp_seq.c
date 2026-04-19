@@ -212,6 +212,9 @@ static Sequence_Row* sequence_add_row(Sequence* sequence)
         result->pitch  = 1.0f;
         result->pan    = 0.0f;
 
+        result->trim_left = 0;
+        result->trim_right = 0;
+
         result->solo = false;
 
         sequence->row_count += 1;
@@ -435,6 +438,9 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
 
                         sound->pitch  = row->pitch * cell->pitch;
 
+                        sound->trim_left  = row->trim_left;
+                        sound->trim_right = row->trim_right;
+
                         // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, sequence->rows[row_index].asset_id, sound->playhead);
                     }
                 }
@@ -481,9 +487,11 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
         Sound*       sound = sound_get(&ss->sound_slop, sound_id);
         Sound_Asset* asset = sound_asset_get(&ss->asset_slop, sound->asset_id);
 
-        u32 byte_index       = sound->playhead * bytes_per_sample;
+        u32 byte_index       = (sound->trim_left + sound->playhead) * bytes_per_sample;
         f32* asset_data      = (f32*)&asset->data.buffer[byte_index];
-        u32 samples_in_asset = asset->data.size / bytes_per_sample; 
+        // printf("samples pre-trim : %u\n", asset->data.size/bytes_per_sample);
+        u32 samples_in_asset = (asset->data.size / bytes_per_sample) - sound->trim_left - sound->trim_right; 
+        // printf("samples post-trim: %u\n", samples_in_asset);
 
         // printf("sound_id: %u, bytes_index: %u, bytes_in_asset: %u, playhead: %u, samples_in_asset: %u\n", sound_id, byte_index, asset->data.size, sound->playhead, samples_in_asset);
 
@@ -500,7 +508,7 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
         f32 d_sample = sound->pitch;
 
         u32 mix_index = 0;
-        f32 frames_remain = ((f32)(samples_in_asset - sound->playhead)) / 2.0f;
+        f32 frames_remain = ((f32)(samples_in_asset - (sound->trim_left + sound->playhead))) / 2.0f;
 
         for (f32 frame_pos = 0; frame_pos < frames_remain; frame_pos += d_sample)
         {
@@ -572,20 +580,30 @@ void ss_post_reload(Simp_Seq_State* ss)
 
     // add assets
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/vocals2.wav"));
-    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/vocals4.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/vocals5.wav"));
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/ch.wav"));
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/kick.wav"));
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/ch.wav"));
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/oh.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/oh.wav"));
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/snare.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/snare.wav"));
+    sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/stage_grand_g.wav"));
 
-    ss->sequence.bpm        = 103;
+    // ss->sequence.bpm        = 103;
+    // ss->sequence.bpm        = 175;
+    ss->sequence.bpm        = 117;
+
+    // ss->sequence.bpm        = 187;
+
     ss->sequence.volume     = 0.8f;
     ss->sequence.pitch      = 1.0f;
     ss->sequence.pan        = 0.0f;
     ss->sequence.cell_count = 16;
 
     ss->sequence.loop = true;
+    // ss->sequence.playhead = 0;
+    // ss->total_samples_mixed = 0;
 
 #if 0
     String voice1_seq = STR_LIT("0000 0000 0000 0001");
@@ -597,27 +615,35 @@ void ss_post_reload(Simp_Seq_State* ss)
     String snare_seq  = STR_LIT("0000 0000 0000 0000");
 #else
 
-    String voice1_seq = STR_LIT("0000 0000 0000 0001");
-    String voice2_seq = STR_LIT("0000 0001 0000 0000");
-    String ch_0_seq   = STR_LIT("0101 0010 0101 0010");
-    String kick_seq   = STR_LIT("1000 0000 1010 0000");
-    String ch_seq     = STR_LIT("1111 1111 1111 1111");
-    String oh_seq     = STR_LIT("0010 1100 0010 1001");
-    String snare_seq  = STR_LIT("0000 1000 0000 1000");
+    String voice1_seq  = STR_LIT("1000 1000 0000 1000");
+    String voice2_seq  = STR_LIT("0000 0000 0010 0000");
+    String ch_0_seq    = STR_LIT("0101 0010 0101 0010");
+    String kick_seq    = STR_LIT("1000 0000 1010 0010");
+    String ch_seq      = STR_LIT("1111 1111 1111 1111");
+    String oh_seq      = STR_LIT("0010 0010 0010 1001");
+    String oh_seq_2    = STR_LIT("0001 1001 0001 1000");
+    String snare_seq   = STR_LIT("0000 1000 0000 1000");
+    String snare_seq_2 = STR_LIT("0000 0100 0000 0100");
+    String bass_seq    = STR_LIT("1000 0000 0000 0010");
 #endif
 
     Sequence_Row* row;
 
     row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
-    row->volume = 0.1f;
-    row->pitch  = 0.5f;
+    row->volume = 0.2f;
+    row->pan    = -0.7f;
+    row->trim_right = 250000;
 
     row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
-    row->volume = 0.1f;
+    row->volume = 0.2f;
+    row->pan    = 0.7f;
+    row->trim_right = 60000;
     row->pitch  = 0.5f;
 
     row = sequence_set_row_from_str(&ss->sequence, 2, ch_0_seq);
     row->volume = 0.75f;
+    row->pitch  = 0.5f;
+    row->pan    = -0.7f;
 
     for (u32 cell_index = 0; cell_index < ss->sequence.cell_count; ++cell_index)
     {
@@ -632,13 +658,28 @@ void ss_post_reload(Simp_Seq_State* ss)
     row->volume = 0.3f;
 
     row = sequence_set_row_from_str(&ss->sequence, 4, ch_seq);
-    row->volume = 0.8f;
+    row->volume = 0.4f;
+    row->pan    = 0.7f;
 
     row = sequence_set_row_from_str(&ss->sequence, 5, oh_seq);
     row->volume = 0.4f;
 
-    row = sequence_set_row_from_str(&ss->sequence, 6, snare_seq);
+    row = sequence_set_row_from_str(&ss->sequence, 6, oh_seq_2);
+    row->volume = 0.4f;
+    row->pitch  = 0.5f;
+    row->pan    = -0.5f;
+
+    row = sequence_set_row_from_str(&ss->sequence, 7, snare_seq);
+    row->volume = 0.4f;
+    row->pan    = 0.5f;
+
+    row = sequence_set_row_from_str(&ss->sequence, 8, snare_seq_2);
     row->volume = 0.2f;
+    row->pan    = -0.5f;
+
+    row = sequence_set_row_from_str(&ss->sequence, 9, bass_seq);
+    row->volume = 0.2f;
+    row->pitch  = 0.2f;
 
     sequence_print(&ss->sequence);
 

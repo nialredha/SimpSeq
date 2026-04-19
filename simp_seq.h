@@ -36,6 +36,9 @@ typedef struct
     f32 pan;
     f32 pitch;
 
+    u32 trim_left;
+    u32 trim_right;
+
     bool loop;
 } Sound;
 
@@ -57,11 +60,16 @@ typedef struct
 
 typedef struct
 {
+    // TODO[nr]: replace with sound struct
     u32 asset_id;
 
     f32 volume;
     f32 pitch;
     f32 pan;
+
+    u32 trim_left;
+    u32 trim_right;
+    // TODO[nr]: replace with sound struct
 
     bool solo;
 
