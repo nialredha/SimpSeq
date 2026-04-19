@@ -212,6 +212,8 @@ static Sequence_Row* sequence_add_row(Sequence* sequence)
         result->pitch  = 1.0f;
         result->pan    = 0.0f;
 
+        result->solo = false;
+
         sequence->row_count += 1;
     }
 
@@ -390,8 +392,7 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
     {
         f32 beats_per_second   = sequence->bpm / 60;
         f32 samples_per_second = (f32)SUPPORTED_SAMPLE_RATE;
-
-        u32 samples_per_beat = (u32)(samples_per_second / beats_per_second);
+        u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
 
         u32 total_samples_in_sequence = samples_per_beat * sequence->cell_count;
 
@@ -404,9 +405,21 @@ static void ss_play_sequence(Simp_Seq_State* ss, Sequence* sequence)
                 // next column needs to play!
                 // printf("cell_index = %u, playhead = %u\n", cell_index, sequence->playhead);
 
+                bool solo_enabled = false;
                 for (u32 row_index = 0; row_index < sequence->row_count; ++row_index)
                 {
-                    Sequence_Row*  row  = &sequence->rows[row_index];
+                    if (sequence->rows[row_index].solo)
+                    {
+                        solo_enabled = true;
+                        break;
+                    }
+                }
+
+                for (u32 row_index = 0; row_index < sequence->row_count; ++row_index)
+                {
+                    Sequence_Row* row = &sequence->rows[row_index];
+                    if (solo_enabled && !row->solo) { continue; }
+
                     Sequence_Cell* cell = &row->cells[cell_index];
 
                     if (cell->active)
@@ -487,26 +500,23 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
         f32 d_sample = sound->pitch;
 
         u32 mix_index = 0;
+        f32 frames_remain = ((f32)(samples_in_asset - sound->playhead)) / 2.0f;
 
-        for (f32 frame_pos = 0; frame_pos < (f32)samples_to_mix/2; frame_pos += d_sample)
-        // for (u32 mix_index = 0; mix_index < samples_to_mix; mix_index += 2)
+        for (f32 frame_pos = 0; frame_pos < frames_remain; frame_pos += d_sample)
         {
             u32 frame_index = (u32)(frame_pos);
             f32 frac        = frame_pos - (f32)frame_index;
             sample_index    = frame_index * 2;
 
-            if (sound->playhead + sample_index > samples_in_asset || mix_index >= samples_to_mix)
-            {
-                break;
-            }
+            if (mix_index >= samples_to_mix) { break; }
 
-            f32 sample_0 = asset_data[sample_index];   // frame 0, sample L
-            f32 sample_1 = asset_data[sample_index+1]; // frame 0, sample R
+            f32 sample_0 = asset_data[sample_index + 0]; // 0L
+            f32 sample_1 = asset_data[sample_index + 1]; // 0R
 
             if (sound->playhead + sample_index + 2 < samples_in_asset)
             {
-                f32 sample_2 = asset_data[sample_index + 2]; // frame 1, sample L
-                f32 sample_3 = asset_data[sample_index + 3]; // frame 1, sample R
+                f32 sample_2 = asset_data[sample_index + 2]; // 1L
+                f32 sample_3 = asset_data[sample_index + 3]; // 1R
 
                 sample_0 = lerp(sample_0, sample_2, frac);
                 sample_1 = lerp(sample_1, sample_3, frac);
@@ -516,20 +526,13 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
             mix_buffer[mix_index + 1] += (sample_1 * sound->volume * pan_1);
 
             mix_index += 2;
-
-#if 0
-            if (d_sample < 1.0f)
-            {
-                printf("frame pos: %f, frame idx: %u, frac: %f, sample idx: %u\n", frame_pos, frame_index, frac, sample_index);
-            }
-#endif
         }
 
         sound->playhead += sample_index;
 
         u32 next_sound_id = ss->sound_slop.slop.slots[sound_id].next;
 
-        if (sound->playhead >= samples_in_asset)
+        if (sound->playhead >= samples_in_asset - 2)
         {
             if (sound->loop)
             {

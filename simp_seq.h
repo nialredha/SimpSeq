@@ -63,6 +63,8 @@ typedef struct
     f32 pitch;
     f32 pan;
 
+    bool solo;
+
     Sequence_Cell cells[MAX_SEQUENCE_CELLS];
 } Sequence_Row;
 
