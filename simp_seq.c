@@ -460,7 +460,7 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
     f32* mix_buffer = ss->mix_buffer;
     for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
     {
-        *mix_buffer++ = 0;
+        mix_buffer[mix_index] = 0;
     }
 
     for (u32 sound_id = ss->sound_slop.slop.first_slot; sound_id != 0; )
@@ -474,8 +474,6 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
 
         // printf("sound_id: %u, bytes_index: %u, bytes_in_asset: %u, playhead: %u, samples_in_asset: %u\n", sound_id, byte_index, asset->data.size, sound->playhead, samples_in_asset);
 
-        mix_buffer = ss->mix_buffer;
-
         // TODO[nr] @study: currently doing equal power panning, but that makes center quieter...
 #if 0
         f32 pan_0 = (1 - sound->pan);
@@ -488,36 +486,43 @@ static void ss_mix(Simp_Seq_State* ss, Ring_Buffer* out)
         u32 sample_index = 0;
         f32 d_sample = sound->pitch;
 
+        u32 mix_index = 0;
+
         for (f32 frame_pos = 0; frame_pos < (f32)samples_to_mix/2; frame_pos += d_sample)
         // for (u32 mix_index = 0; mix_index < samples_to_mix; mix_index += 2)
         {
             u32 frame_index = (u32)(frame_pos);
-            sample_index = frame_index * 2;
+            f32 frac        = frame_pos - (f32)frame_index;
+            sample_index    = frame_index * 2;
 
-            if (sound->playhead + sample_index < samples_in_asset)
-            {
-                f32 frac = frame_pos - (f32)frame_index;
-
-                f32 sample_0 = asset_data[sample_index];
-                f32 sample_1 = asset_data[sample_index+1];
-
-                if (sound->playhead + sample_index + 2 < samples_in_asset)
-                {
-                    f32 sample_2 = asset_data[sample_index + 2];
-                    f32 sample_3 = asset_data[sample_index + 3];
-
-                    sample_0 = lerp(sample_0, sample_2, frac);
-                    sample_1 = lerp(sample_1, sample_3, frac);
-                }               
-
-                mix_buffer[0] += (sample_0 * sound->volume * pan_0);
-                mix_buffer[1] += (sample_1 * sound->volume * pan_1);
-                mix_buffer += 2;
-            }
-            else
+            if (sound->playhead + sample_index > samples_in_asset || mix_index >= samples_to_mix)
             {
                 break;
             }
+
+            f32 sample_0 = asset_data[sample_index];   // frame 0, sample L
+            f32 sample_1 = asset_data[sample_index+1]; // frame 0, sample R
+
+            if (sound->playhead + sample_index + 2 < samples_in_asset)
+            {
+                f32 sample_2 = asset_data[sample_index + 2]; // frame 1, sample L
+                f32 sample_3 = asset_data[sample_index + 3]; // frame 1, sample R
+
+                sample_0 = lerp(sample_0, sample_2, frac);
+                sample_1 = lerp(sample_1, sample_3, frac);
+            }               
+
+            mix_buffer[mix_index]     += (sample_0 * sound->volume * pan_0);
+            mix_buffer[mix_index + 1] += (sample_1 * sound->volume * pan_1);
+
+            mix_index += 2;
+
+#if 0
+            if (d_sample < 1.0f)
+            {
+                printf("frame pos: %f, frame idx: %u, frac: %f, sample idx: %u\n", frame_pos, frame_index, frac, sample_index);
+            }
+#endif
         }
 
         sound->playhead += sample_index;
@@ -579,7 +584,7 @@ void ss_post_reload(Simp_Seq_State* ss)
 
     ss->sequence.loop = true;
 
-#if 1
+#if 0
     String voice1_seq = STR_LIT("0000 0000 0000 0001");
     String voice2_seq = STR_LIT("0000 0001 0000 0000");
     String ch_0_seq   = STR_LIT("0000 0000 0000 0000");
@@ -602,10 +607,11 @@ void ss_post_reload(Simp_Seq_State* ss)
 
     row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
     row->volume = 0.1f;
-    row->pitch  = 0.8f;
+    row->pitch  = 0.5f;
 
     row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
     row->volume = 0.1f;
+    row->pitch  = 0.5f;
 
     row = sequence_set_row_from_str(&ss->sequence, 2, ch_0_seq);
     row->volume = 0.75f;
