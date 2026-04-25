@@ -416,8 +416,8 @@ static u32 ss_mix(Sound_Asset_Slop* assets, Sound_Slop* sounds, f32* mix_buffer,
         u32 byte_index  = sound->playhead * bytes_per_sample;
         f32* asset_data = (f32*)&asset->data.buffer[byte_index];
 
-        u32 trim_left_samples     = (u32)(sound->trim_left  * samples_in_asset);
-        u32 trim_right_samples    = (u32)(sound->trim_right * samples_in_asset);
+        u32 trim_left_samples     = (u32)((sound->trim_left  * samples_in_asset) + 0.5f);
+        u32 trim_right_samples    = (u32)((sound->trim_right * samples_in_asset) + 0.5f);
         u32 total_samples_to_trim = trim_left_samples + trim_right_samples;
 
         if (total_samples_to_trim <= samples_in_asset)
@@ -615,7 +615,7 @@ void ss_post_reload(Simp_Seq_State* ss)
     ss->sequence.pan        = 0.0f;
     ss->sequence.cell_count = 16;
 
-    ss->sequence.loop = false;
+    ss->sequence.loop = true;
 
     String voice1_seq  = STR_LIT("1000 1000 0000 1000");
     String voice2_seq  = STR_LIT("0000 0000 0010 0000");
@@ -631,7 +631,7 @@ void ss_post_reload(Simp_Seq_State* ss)
     Sequence_Row* row;
 
     row = sequence_set_row_from_str(&ss->sequence, 0, voice1_seq);
-    row->volume = 0.2f;
+    row->volume = 0.1f;
     row->pan    = -0.7f;
     row->trim_right = 0.8f;
 
