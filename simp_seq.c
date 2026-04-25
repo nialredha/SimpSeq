@@ -313,6 +313,7 @@ static Sequence_Row* sequence_add_row_from_int(Sequence* sequence, u32 row_int)
 }
 static void sequence_print(Sequence* sequence)
 {
+    printf("\n");
     printf("   |");
     for (u32 cell_index = 0; cell_index < sequence->cell_count; ++cell_index)
     {
@@ -342,6 +343,7 @@ static void sequence_print(Sequence* sequence)
     {
         printf("---|");
     }
+    printf("\n");
     printf("\n");
 }
 
