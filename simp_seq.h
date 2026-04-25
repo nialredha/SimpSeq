@@ -30,7 +30,7 @@ typedef struct
 typedef struct
 {
     u32 asset_id;
-    u32 playhead;
+    s32 playhead;
 
     f32 volume;
     f32 pan;
@@ -51,11 +51,20 @@ typedef struct
 
 typedef struct
 {
+    f32 division;
+    f32 velocity;
+    u32 count;
+} Retrig;
+
+typedef struct
+{
     bool active;
 
     f32  volume;
     f32  pitch;
     f32  pan;
+
+    Retrig retrig;
 } Sequence_Cell;
 
 typedef struct

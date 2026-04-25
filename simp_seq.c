@@ -413,6 +413,14 @@ static u32 ss_mix(Sound_Asset_Slop* assets, Sound_Slop* sounds, f32* mix_buffer,
 
         u32 samples_in_asset  = asset->data.size / bytes_per_sample;
 
+        u32 mix_index = 0;
+
+        while (sound->playhead < 0 && mix_index < samples_to_mix)
+        {
+            sound->playhead++;
+            mix_index++;
+        }
+
         u32 byte_index  = sound->playhead * bytes_per_sample;
         f32* asset_data = (f32*)&asset->data.buffer[byte_index];
 
@@ -439,16 +447,15 @@ static u32 ss_mix(Sound_Asset_Slop* assets, Sound_Slop* sounds, f32* mix_buffer,
         u32 sample_index = 0;
         f32 d_sample = sound->pitch;
 
-        u32 mix_index = 0;
         f32 frames_remain = ((f32)(samples_in_asset - (sound->trim_left + sound->playhead))) / 2.0f;
 
         for (f32 frame_pos = 0; frame_pos < frames_remain; frame_pos += d_sample)
         {
+            if (mix_index >= samples_to_mix) { break; }
+
             u32 frame_index = (u32)(frame_pos);
             f32 frac        = frame_pos - (f32)frame_index;
             sample_index    = frame_index * 2;
-
-            if (mix_index >= samples_to_mix) { break; }
 
             f32 sample_0 = asset_data[sample_index + 0]; // 0L
             f32 sample_1 = asset_data[sample_index + 1]; // 0R
@@ -472,7 +479,7 @@ static u32 ss_mix(Sound_Asset_Slop* assets, Sound_Slop* sounds, f32* mix_buffer,
 
         u32 next_sound_id = sounds->slop.slots[sound_id].next;
 
-        if (sound->playhead >= samples_in_asset - 2)
+        if (sound->playhead >= (s32)samples_in_asset - 2)
         {
             if (sound->loop)
             {
@@ -505,6 +512,7 @@ static void ss_mix_sequence(Simp_Seq_State* ss, Sequence* sequence, Ring_Buffer*
         u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
 
         u32 samples_to_mix = 9600; // TODO[nr] @better
+        samples_to_mix = samples_to_mix > samples_per_beat ? samples_per_beat : samples_to_mix; // clamp to samples per beat
 
         u32 total_samples_in_sequence = samples_per_beat * sequence->cell_count;
 
@@ -520,21 +528,21 @@ static void ss_mix_sequence(Simp_Seq_State* ss, Sequence* sequence, Ring_Buffer*
             f32 cell_pos   = (f32)sequence->sample_playhead / (f32)samples_per_beat;
             u32 cell_index = (u32)cell_pos;
 
+            bool solo_enabled = false;
+            for (u32 row_index = 0; row_index < sequence->row_count; ++row_index)
+            {
+                if (sequence->rows[row_index].solo)
+                {
+                    solo_enabled = true;
+                    break;
+                }
+            }
+
             if (cell_index >= sequence->beat_playhead && cell_index < MAX_SEQUENCE_CELLS)
             {
                 // beat boundary!
 
                 // printf("cell_pos = %f, cell_index = %u, beat_playhead = %u, sample_playhead = %u, samples_per_beat = %u\n", cell_pos, cell_index, sequence->beat_playhead, sequence->sample_playhead, samples_per_beat);
-
-                bool solo_enabled = false;
-                for (u32 row_index = 0; row_index < sequence->row_count; ++row_index)
-                {
-                    if (sequence->rows[row_index].solo)
-                    {
-                        solo_enabled = true;
-                        break;
-                    }
-                }
 
                 for (u32 row_index = 0; row_index < sequence->row_count; ++row_index)
                 {
@@ -545,19 +553,64 @@ static void ss_mix_sequence(Simp_Seq_State* ss, Sequence* sequence, Ring_Buffer*
 
                     if (cell->active)
                     {
-                        u32 sound_id = ss_play_sound(ss, row->asset_id);
-                        Sound* sound = sound_get(&ss->sound_slop, sound_id);
+                        // retrig enabled
+                        if (cell->retrig.count > 0 && cell->retrig.division > 1)
+                        {
+                            u32 samples_per_div = (u32)((f32)samples_per_beat / cell->retrig.division);
 
-                        sound->volume = sequence->volume * row->volume * cell->volume;
+                            for (u32 div_index = 0; div_index < cell->retrig.count; ++div_index)
+                            {
+                                u32 sound_id = ss_play_sound(ss, row->asset_id);
+                                Sound* sound = sound_get(&ss->sound_slop, sound_id);
 
-                        f32 pan     = row->pan + cell->pan;
-                        pan         = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
-                        sound->pan  = pan;
+                                f32 a = 0.0f;
+                                f32 b = cell->volume;
+                                f32 t = cell->retrig.velocity * div_index;
+                                if (cell->retrig.velocity < 0.0f)
+                                {
+                                    a = cell->volume;
+                                    b = 0.0f;
+                                    t *= -1.0f;
+                                }
 
-                        sound->pitch  = row->pitch * cell->pitch;
+                                f32 cell_volume = lerp(a, b, t);
 
-                        sound->trim_left  = row->trim_left;
-                        sound->trim_right = row->trim_right;
+                                // printf("retrig a: %f, b: %f, t: %f, cell_volume %f\n", 0.0f, cell->volume, cell->retrig.velocity*div_index, cell_volume);
+
+                                sound->volume = sequence->volume * row->volume * cell_volume;
+
+                                f32 pan     = row->pan + cell->pan;
+                                pan         = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
+                                sound->pan  = pan;
+
+                                sound->pitch  = row->pitch * cell->pitch;
+
+                                sound->trim_left  = row->trim_left;
+                                sound->trim_right = row->trim_right;   
+
+                                sound->playhead = -1 * (div_index * samples_per_div);
+                                // printf("div_index %u, count %u, samples_per_div %u, playhead %d\n\n", div_index, cell->retrig.count, samples_per_div, sound->playhead);
+                            }
+                            // printf("\n");
+
+                            // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, sequence->rows[row_index].asset_id, sound->playhead);
+                        }
+                        else
+                        {
+                            u32 sound_id = ss_play_sound(ss, row->asset_id);
+                            Sound* sound = sound_get(&ss->sound_slop, sound_id);
+
+                            sound->volume = sequence->volume * row->volume * cell->volume;
+
+                            f32 pan     = row->pan + cell->pan;
+                            pan         = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
+                            sound->pan  = pan;
+
+                            sound->pitch  = row->pitch * cell->pitch;
+
+                            sound->trim_left  = row->trim_left;
+                            sound->trim_right = row->trim_right;
+                        }
 
                         // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, sequence->rows[row_index].asset_id, sound->playhead);
                     }
@@ -567,7 +620,7 @@ static void ss_mix_sequence(Simp_Seq_State* ss, Sequence* sequence, Ring_Buffer*
             }
             else
             {
-                // between beats! don't mix passed the beat boundary
+                // between beats!
                 u32 samples_til_next_beat = sequence->sample_playhead % samples_per_beat;
                 if (samples_til_next_beat < samples_to_mix)
                 {
@@ -604,9 +657,10 @@ void ss_post_reload(Simp_Seq_State* ss)
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/snare.wav"));
     sequence_add_row(&ss->sequence)->asset_id = sound_asset_add(&ss->perm_arena, &ss->asset_slop, STR_LIT("../data/stage_grand_g.wav"));
 
+    ss->sequence.bpm = 120;
     // ss->sequence.bpm = 103;
     // ss->sequence.bpm = 175;
-    ss->sequence.bpm = 117;
+    // ss->sequence.bpm = 117;
     // ss->sequence.bpm = 187;
     // ss->sequence.bpm = 360;
 
@@ -623,7 +677,7 @@ void ss_post_reload(Simp_Seq_State* ss)
     String kick_seq    = STR_LIT("1000 0000 1010 0010");
     String ch_seq      = STR_LIT("1111 1111 1111 1111");
     String oh_seq      = STR_LIT("0010 0010 0010 1001");
-    String oh_seq_2    = STR_LIT("0001 1001 0001 1000");
+    String oh_seq_2    = STR_LIT("0001 1001 0001 0100");
     String snare_seq   = STR_LIT("0000 1000 0000 1000");
     String snare_seq_2 = STR_LIT("0000 0100 0000 0100");
     String bass_seq    = STR_LIT("1000 0000 0000 0010");
@@ -638,7 +692,7 @@ void ss_post_reload(Simp_Seq_State* ss)
     row = sequence_set_row_from_str(&ss->sequence, 1, voice2_seq);
     row->volume = 0.2f;
     row->pan    = 0.7f;
-    row->trim_right = 0.25f;
+    row->trim_right = 0.85f;
     row->pitch  = 0.5f;
 
     row = sequence_set_row_from_str(&ss->sequence, 2, ch_0_seq);
@@ -666,17 +720,19 @@ void ss_post_reload(Simp_Seq_State* ss)
     row->volume = 0.4f;
 
     row = sequence_set_row_from_str(&ss->sequence, 6, oh_seq_2);
-    row->volume = 0.4f;
-    row->pitch  = 0.5f;
+    row->volume = 0.2f;
     row->pan    = -0.5f;
+    row->cells[11].retrig = (Retrig){.division = 2.0f, .velocity = -0.5f, .count = 2 };
 
     row = sequence_set_row_from_str(&ss->sequence, 7, snare_seq);
     row->volume = 0.4f;
     row->pan    = 0.5f;
+    row->cells[4].retrig = (Retrig){.division = 4.0f, .velocity = -0.25f, .count = 4 };
 
     row = sequence_set_row_from_str(&ss->sequence, 8, snare_seq_2);
     row->volume = 0.2f;
     row->pan    = -0.5f;
+    row->cells[5].retrig = (Retrig){.division = 4.0f, .velocity = 0.5f, .count = 4 };
 
     row = sequence_set_row_from_str(&ss->sequence, 9, bass_seq);
     row->volume = 0.2f;
