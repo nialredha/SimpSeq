@@ -36,8 +36,8 @@ typedef struct
     f32 pan;
     f32 pitch;
 
-    u32 trim_left;
-    u32 trim_right;
+    f32 trim_left;
+    f32 trim_right;
 
     bool loop;
 } Sound;
@@ -67,8 +67,8 @@ typedef struct
     f32 pitch;
     f32 pan;
 
-    u32 trim_left;
-    u32 trim_right;
+    f32 trim_left;
+    f32 trim_right;
     // TODO[nr]: replace with sound struct
 
     bool solo;
@@ -87,7 +87,8 @@ typedef struct
     u32 cell_count;
     u32 row_count;
 
-    u32  playhead;
+    u32  beat_playhead;
+    u32  sample_playhead;
     bool loop;
 
     Sequence_Row rows[MAX_SEQUENCE_ROWS];
@@ -102,9 +103,6 @@ typedef struct
 
     Arena perm_arena;
     Arena tran_arena;
-
-    u32 total_samples_mixed;
-    f32 mix_buffer[9600]; // TODO[nr] @better: assuming 100ms 48KHz stereo 
 } Simp_Seq_State;
 
 void ss_post_load  (Simp_Seq_State* ss);
