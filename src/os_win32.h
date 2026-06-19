@@ -3,8 +3,34 @@
 
 #include <windows.h>
 
+s32 entry_point(s32 arg_count, char** args);
+
 //
-// DLL
+// general
+//
+
+typedef struct
+{
+    u64 size;
+    u64 time_modified;
+    u64 time_created;
+} OS_File_Properties;
+
+static String os_win32_read_entire_file (String filename);
+static bool   os_win32_write_entire_file(String filename, String content);
+
+static OS_File_Properties os_win32_get_file_properties(String filepath);
+
+static String os_win32_read_entire_file (String filepath);
+static bool   os_win32_write_entire_file(String filename, String contents);
+
+static void os_win32_free_file_contents(String* contents);
+
+static u64  os_win32_now_us  (void);
+static void os_win32_sleep_ms(u32 milliseconds);
+
+//
+// dll
 //
 
 typedef struct 
@@ -20,7 +46,7 @@ static void  os_win32_unload_dll(OS_Win32_DLL* dll);
 static void* os_win32_get_function_pointer(OS_Win32_DLL* dll, String function_name);
 
 //
-// TIME
+// time
 //
 
 FILETIME      os_win32_get_last_write_time_of_file      (String filename);
@@ -29,7 +55,7 @@ LARGE_INTEGER os_win32_get_performance_counter_count    (void);
 LARGE_INTEGER os_win32_get_performance_counter_frequency(void);
 
 //
-// INTRINSICS
+// intrinsics
 //
 
 #include <winnt.h>
@@ -47,9 +73,9 @@ inline s64 os_win32_atomic_add_s64(s64* volatile value, s64 addend)
 }
 
 //
-// WASAPI
+// wasapi
 //
-//   References:
+//   references:
 //     https://medium.com/@shahidahmadkhan86/sound-in-windows-the-wasapi-in-c-23024cdac7c6 
 //     https://www.reddit.com/r/C_Programming/comments/1gv80uq/cannot_solve_errors_for_unresolved_external/
 //     https://learn.microsoft.com/en-us/windows/win32/coreaudio/rendering-a-stream

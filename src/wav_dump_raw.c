@@ -1,20 +1,11 @@
-#include "base_core.h"
-#include "base_arena.h"
-#include "base_string.h"
-
+#include "core.h"
 #include "wav.h"
 #include "wav_dump_utils.h"
-
-#include "os.h"
 #include "os_win32.h"
 
-#include "base_arena.c"
-#include "base_string.c"
-
+#include "core.c"
 #include "wav.c"
 #include "wav_dump_utils.c"
-
-#include "os.c"
 #include "os_win32.c"
 
 int entry_point(int argc, char** argv)
@@ -22,14 +13,10 @@ int entry_point(int argc, char** argv)
     // globals
     Arena arena = {0};
 
-    String filename_in = {0};
-    String file_in     = {0};
+    String filename_in  = {0};
+    String file_in      = {0};
 
     String filename_out = {0};
-
-    Wav wav = {0};
-
-    String_Builder strb = {0};
 
     // get input filename
     if (argc < 2)
@@ -59,38 +46,10 @@ int entry_point(int argc, char** argv)
         return 1;
     }
 
-    wav = wav_from_data(&arena, file_in);
+    String_Builder strb = {0};
+    arena_alloc(&strb.arena, 5*file_in.count);
 
-    arena_alloc(&strb.arena, 1024);
-
-    // riff chunk
-    wav_dump_riff(&arena, &wav.riff_chunk, 0, &strb);
-
-    // sub chunks
-    for (Wav_Sub_Chunk_Node* n = wav.sub_chunks.first; n != 0; n = n->next)
-    {
-        if (n->header.id == WAV_FOURCC(WAV_FORMAT_CHUNK_ID))
-        {
-            Wav_Format* format = (Wav_Format*)(file_in.data + n->data_offset);
-
-            String fmt_id  = WAV_STR_FROM_FOURCC(n->header.id);
-
-            strb_append(&strb, 
-                        str_format(&arena, 
-                                   "Sub-Chunk %.*s {\n"
-                                   "  id            = %.*s,\n" 
-                                   "  size          = %u,\n",
-                                   fmt_id.count, fmt_id.data,
-                                   fmt_id.count, fmt_id.data,
-                                   n->header.size));
-
-            wav_dump_format(&arena, format, 1, &strb);
-        }
-        else
-        {
-            wav_dump_sub_chunk(&arena, n, 0, &strb);
-        }
-    }
+    WAV_DUMP_BIN(&arena, (u8*)file_in.data, file_in.count, &strb);
 
     //
     // TODO[nr] @fix: add the following functionality to win32 os layer
@@ -135,5 +94,3 @@ int entry_point(int argc, char** argv)
 
     return 0;
 }
-
-

@@ -1,7 +1,3 @@
-//
-// General OS API
-//
-
 OS_File_Properties os_get_file_properties(String filepath)
 {
     OS_File_Properties result = {0};

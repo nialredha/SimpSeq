@@ -1,20 +1,11 @@
-#include "base_core.h"
-#include "base_arena.h"
-#include "base_string.h"
-
+#include "core.h"
 #include "wav.h"
 #include "wav_dump_utils.h"
-
-#include "os.h"
 #include "os_win32.h"
 
-#include "base_arena.c"
-#include "base_string.c"
-
+#include "core.c"
 #include "wav.c"
 #include "wav_dump_utils.c"
-
-#include "os.c"
 #include "os_win32.c"
 
 int entry_point(int argc, char** argv)

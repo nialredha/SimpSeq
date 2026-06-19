@@ -1,32 +1,19 @@
-#include "base_core.h"
-#include "base_arena.h"
-#include "base_string.h"
-#include "base_ring_buffer.h"
-
-#include "slot_pool.h"
-
+#include "core.h"
 #include "wav.h"
 #include "wav_dump_utils.h"
-
-#include "os.h"
 #include "os_win32.h"
 
-#include "base_arena.c"
-#include "base_string.c"
-#include "base_ring_buffer.c"
-
+#include "core.c"
 #include "wav.c"
 #include "wav_dump_utils.c"
-
-#include "os.c"
 #include "os_win32.c"
 
-#include "simp_seq.h"
+#include "tracker.h"
 
-typedef void (SS_Post_Load)(Simp_Seq_State* state);
-typedef void (SS_Post_Reload)(Simp_Seq_State* state);
+typedef void (Trk_Module_Post_Load)(Trk* trk);
+typedef void (Trk_Module_Post_Reload)(Trk* trk);
 
-typedef void (SS_Update)(Simp_Seq_State* state, Ring_Buffer* output);
+typedef void (Trk_Module_Update)(Trk* trk, Ring_Buffer* out);
 
 typedef struct
 {
@@ -47,14 +34,14 @@ s32 entry_point(s32 arg_count, char** args)
     (void)arg_count;
     (void)args;
 
-    OS_Win32_DLL ss_dll = {0};
-    ss_dll.filename = STR_LIT("ss.dll");
+    OS_Win32_DLL trk_module_dll = {0};
+    trk_module_dll.filename = STR_LIT("trk_module.dll");
 
-    Simp_Seq_State ss_state  = {0};
+    Trk trk = {0};
 
-    SS_Post_Load*   ss_post_load   = 0;
-    SS_Post_Reload* ss_post_reload = 0;
-    SS_Update*      ss_update      = 0;
+    Trk_Module_Post_Load*   trk_module_post_load   = 0;
+    Trk_Module_Post_Reload* trk_module_post_reload = 0;
+    Trk_Module_Update*      trk_module_update      = 0;
 
     Ring_Buffer output_buffer = rb_create(9600*4); // TODO[nr] @dobetter
 
@@ -84,52 +71,52 @@ s32 entry_point(s32 arg_count, char** args)
         return result;
     }
 
-    os_win32_reload_dll(&ss_dll);
+    os_win32_reload_dll(&trk_module_dll);
 
-    ss_post_load   = (SS_Post_Load*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_post_load"));
-    ss_post_reload = (SS_Post_Reload*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_post_reload"));
-    ss_update      = (SS_Update*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_update"));
+    trk_module_post_load   = (Trk_Module_Post_Load*)os_win32_get_function_pointer(&trk_module_dll, STR_LIT("trk_module_post_load"));
+    trk_module_post_reload = (Trk_Module_Post_Reload*)os_win32_get_function_pointer(&trk_module_dll, STR_LIT("trk_module_post_reload"));
+    trk_module_update      = (Trk_Module_Update*)os_win32_get_function_pointer(&trk_module_dll, STR_LIT("trk_module_update"));
 
-    if (ss_post_load)   { ss_post_load(&ss_state);   }
-    if (ss_post_reload) { ss_post_reload(&ss_state); }
+    if (trk_module_post_load)   { trk_module_post_load(&trk);   }
+    if (trk_module_post_reload) { trk_module_post_reload(&trk); }
 
     bool reload = false;
 
     while (true)
     {
-        FILETIME current_write_time = os_win32_get_last_write_time_of_file(ss_dll.filename);
+        FILETIME current_write_time = os_win32_get_last_write_time_of_file(trk_module_dll.filename);
 
         // TODO[nr] @move: to win32 layer
-        if (CompareFileTime(&ss_dll.last_write_time, &current_write_time) != 0 || reload)
+        if (CompareFileTime(&trk_module_dll.last_write_time, &current_write_time) != 0 || reload)
         {
             reload = true;
 
 #if 0
-            printf("\nDetected change! Reloading %s\n", ss_dll.filename.data);
+            printf("\nDetected change! Reloading %s\n", trk_module_dll.filename.data);
             SYSTEMTIME last_sys_time;
             SYSTEMTIME curr_sys_time;
-            FileTimeToSystemTime(&ss_dll.last_write_time, &last_sys_time);
+            FileTimeToSystemTime(&trk_module_dll.last_write_time, &last_sys_time);
             FileTimeToSystemTime(&current_write_time, &curr_sys_time);
             printf("  Last: %02uh:%02um:%02us:%04ums\n", last_sys_time.wHour, last_sys_time.wMinute, last_sys_time.wSecond, last_sys_time.wMilliseconds);
             printf("  Curr: %02uh:%02um:%02us:%04ums\n", curr_sys_time.wHour, curr_sys_time.wMinute, curr_sys_time.wSecond, curr_sys_time.wMilliseconds);
 #endif
 
-            if (os_win32_reload_dll(&ss_dll))
+            if (os_win32_reload_dll(&trk_module_dll))
             {
-                printf("\nReloaded %s!\n", ss_dll.filename.data);
+                printf("\nReloaded %s!\n", trk_module_dll.filename.data);
 
-                ss_post_reload = (SS_Post_Reload*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_post_reload"));
-                if (ss_post_reload) { ss_post_reload(&ss_state); }
+                trk_module_post_reload = (Trk_Module_Post_Reload*)os_win32_get_function_pointer(&trk_module_dll, STR_LIT("trk_module_post_reload"));
+                if (trk_module_post_reload) { trk_module_post_reload(&trk); }
 
                 reload = false;
             }
 
-            ss_update = (SS_Update*)os_win32_get_function_pointer(&ss_dll, STR_LIT("ss_update"));
+            trk_module_update = (Trk_Module_Update*)os_win32_get_function_pointer(&trk_module_dll, STR_LIT("trk_module_update"));
         }
 
-        if (ss_update != 0)
+        if (trk_module_update != 0)
         {
-            ss_update(&ss_state, &output_buffer);
+            trk_module_update(&trk, &output_buffer);
         }
 
         os_sleep_ms(10);
