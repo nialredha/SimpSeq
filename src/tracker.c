@@ -376,7 +376,7 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 {
     if (pattern->bpm > 0)
     {
-        f32 beats_per_second   = pattern->bpm / 60;
+        f32 beats_per_second   = pattern->bpm / 60.0f;
         f32 samples_per_second = (f32)SUPPORTED_SAMPLE_RATE;
         u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
 
@@ -491,6 +491,9 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
             {
                 // between beats!
                 u32 samples_til_next_beat = trk->sample_playhead % samples_per_beat;
+
+                assert(samples_til_next_beat != 0);
+
                 if (samples_til_next_beat < samples_to_mix)
                 {
                     samples_to_mix = samples_til_next_beat;
@@ -616,6 +619,7 @@ static u32 trk_mix(Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* o
     }
 
     u32 bytes_mixed = samples_to_mix * bytes_per_sample;
+
     u32 bytes_written = rb_write(out, (u8*)mix_buffer, bytes_mixed);
 
     assert(bytes_written == bytes_mixed);
@@ -632,6 +636,9 @@ void trk_module_post_load(Trk* trk)
 
 void trk_module_post_reload(Trk* trk)
 {
+    // recompute the beat playhead in case the BPM changed
+    trk->beat_playhead = trk->sample_playhead / SUPPORTED_SAMPLE_RATE;
+
     trk_pattern_reset(&trk->pattern);
 
     // Row* row = add_row(STR_LIT("../data/vocals2.wav"), STR_LIT("1000 1000 0000 1000"));
@@ -661,15 +668,16 @@ void trk_module_post_reload(Trk* trk)
     trk_pattern_add_row(&trk->pattern)->asset_id = trk_asset_add(&trk->perm_arena, &trk->asset_slop, STR_LIT("../data/stage_grand_g.wav"));
     trk_pattern_add_row(&trk->pattern)->asset_id = trk_asset_add(&trk->perm_arena, &trk->asset_slop, STR_LIT("../data/stage_grand_g.wav"));
 
-    trk->pattern.bpm = 30;
+    // trk->pattern.bpm = 30;
     // trk->pattern.bpm = 120;
     // trk->pattern.bpm = 103;
-    // trk->pattern.bpm = 175;
+    trk->pattern.bpm = 175;
     // trk->pattern.bpm = 117;
     // trk->pattern.bpm = 187;
     // trk->pattern.bpm = 360;
 
-    trk->pattern.volume     = 0.8f;
+    // trk->pattern.volume     = 0.8f;
+    trk->pattern.volume     = 0.0f;
     trk->pattern.pitch      = 0.0f;
     trk->pattern.pan        = 0.0f;
     trk->pattern.cell_count = 16;

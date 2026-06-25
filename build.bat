@@ -26,3 +26,5 @@ set export_funcs=/EXPORT:trk_module_post_load /EXPORT:trk_module_post_reload /EX
 
 cl %cl_includes% ..\src\tracker.c %c_flags% /LD /link %l_flags% /DLL %export_funcs% /out:"trk_module.dll" ole32.lib winmm.lib
 cl %cl_includes% ..\src\tracker_runtime.c %c_flags% /link /out:"tracker.exe" ole32.lib winmm.lib
+
+popd
