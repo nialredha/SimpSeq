@@ -432,21 +432,24 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
                                 u32 sound_id = trk_play_sound(trk, row->asset_id);
                                 Trk_Sound* sound = trk_sound_get(&trk->sound_slop, sound_id);
 
-                                f32 a = 0.0f;
-                                f32 b = cell->volume;
+                                f32 a = cell->volume;
+                                f32 b = 0.2f;
                                 f32 t = cell->retrig.velocity * div_index;
-                                if (cell->retrig.velocity < 0.0f)
+
+                                if (cell->retrig.velocity < 0)
                                 {
-                                    a = cell->volume;
-                                    b = 0.0f;
-                                    t *= -1.0f;
+                                    t *= -1;
+                                }
+                                else
+                                {
+                                    t = 1 - t;
                                 }
 
                                 f32 cell_volume = lerp(a, b, t);
 
-                                // printf("retrig a: %f, b: %f, t: %f, cell_volume %f\n", 0.0f, cell->volume, cell->retrig.velocity*div_index, cell_volume);
-
                                 sound->volume = pattern->volume * row->volume * cell_volume;
+
+                                // printf("retrig a: %f, b: %f, t: %f, cell_volume: %f, actual volume: %f\n", a, b, t, cell_volume, sound->volume);
 
                                 f32 pan     = row->pan + cell->pan;
                                 pan         = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
@@ -491,6 +494,20 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
             {
                 // between beats!
                 u32 samples_til_next_beat = trk->sample_playhead % samples_per_beat;
+
+                if (samples_til_next_beat == 0)
+                {
+                    printf("sample_playhead = %d\n"
+                           "samples_per_beat = %d\n"
+                           "samples_to_mix = %d\n"
+                           "beat_playhead = %d\n"
+                           "cell_index = %d\n",
+                           trk->sample_playhead,
+                           samples_per_beat,
+                           samples_to_mix,
+                           trk->beat_playhead,
+                           cell_index);
+                }
 
                 assert(samples_til_next_beat != 0);
 
@@ -636,9 +653,6 @@ void trk_module_post_load(Trk* trk)
 
 void trk_module_post_reload(Trk* trk)
 {
-    // recompute the beat playhead in case the BPM changed
-    trk->beat_playhead = trk->sample_playhead / SUPPORTED_SAMPLE_RATE;
-
     trk_pattern_reset(&trk->pattern);
 
     // Row* row = add_row(STR_LIT("../data/vocals2.wav"), STR_LIT("1000 1000 0000 1000"));
@@ -669,15 +683,14 @@ void trk_module_post_reload(Trk* trk)
     trk_pattern_add_row(&trk->pattern)->asset_id = trk_asset_add(&trk->perm_arena, &trk->asset_slop, STR_LIT("../data/stage_grand_g.wav"));
 
     // trk->pattern.bpm = 30;
-    // trk->pattern.bpm = 120;
+    trk->pattern.bpm = 120;
     // trk->pattern.bpm = 103;
-    trk->pattern.bpm = 175;
+    // trk->pattern.bpm = 175;
     // trk->pattern.bpm = 117;
     // trk->pattern.bpm = 187;
     // trk->pattern.bpm = 360;
 
-    // trk->pattern.volume     = 0.8f;
-    trk->pattern.volume     = 0.0f;
+    trk->pattern.volume     = 0.8f;
     trk->pattern.pitch      = 0.0f;
     trk->pattern.pan        = 0.0f;
     trk->pattern.cell_count = 16;
@@ -749,7 +762,7 @@ void trk_module_post_reload(Trk* trk)
     row = trk_pattern_set_row_from_str(&trk->pattern, 7, snare_seq);
     row->volume = 0.4f;
     row->pan    = 0.5f;
-    row->cells[4].retrig = (Trk_Retrig){.division = 4.0f, .velocity = -0.25f, .count = 3 };
+    row->cells[4].retrig = (Trk_Retrig){.division = 4.0f, .velocity = 0.25f, .count = 4 };
 
     row = trk_pattern_set_row_from_str(&trk->pattern, 8, snare_seq_2);
     row->volume = 0.2f;
@@ -768,6 +781,13 @@ void trk_module_post_reload(Trk* trk)
 
     row->cells[14].retrig = (Trk_Retrig){.division = 4.0f, .velocity = 0.25f, .count = 4 };
     row->cells[14].pan = -1.0f;
+
+    // recompute the beat playhead in case the BPM changed
+    f32 beats_per_second   = trk->pattern.bpm / 60.0f;
+    f32 samples_per_second = (f32)SUPPORTED_SAMPLE_RATE;
+    u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
+
+    trk->beat_playhead = trk->sample_playhead / samples_per_beat;
 
     trk_pattern_print(&trk->pattern);
 
