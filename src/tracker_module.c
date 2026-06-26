@@ -25,37 +25,53 @@ void trk_module_post_reload(Trk* trk)
 {
     trk_pattern_reset(&trk->pattern);
 
-    trk->pattern.bpm        = 90;
+    trk->pattern.bpm        = 170;
     trk->pattern.volume     = 0.8f;
     trk->pattern.cell_count = 16;
     trk->pattern.loop       = true;
 
-    Trk_Row* kk = trk_pattern_add_row(&trk->perm_arena, &trk->asset_slop, &trk->pattern, STR_LIT("../data/kick.wav"),  STR_LIT("1010 0000 0110 0001"));
-    Trk_Row* ch = trk_pattern_add_row(&trk->perm_arena, &trk->asset_slop, &trk->pattern, STR_LIT("../data/ch.wav"),    STR_LIT("0101 0111 0001 0110"));
-    Trk_Row* oh = trk_pattern_add_row(&trk->perm_arena, &trk->asset_slop, &trk->pattern, STR_LIT("../data/oh.wav"),    STR_LIT("1000 1000 0000 0000"));
-    Trk_Row* ss = trk_pattern_add_row(&trk->perm_arena, &trk->asset_slop, &trk->pattern, STR_LIT("../data/snare.wav"), STR_LIT("0000 1100 1100 1000"));
+#define TRK_ROW_EDIT(pattern, row_index)   for (Trk_Row* row = &(pattern)->rows[row_index]; row != 0; row = 0)
+#define TRK_ROW_NEW(trk, name, fname, seq) u32 name = trk_pattern_add_row(&(trk)->perm_arena, &(trk)->asset_slop, &(trk)->pattern, fname, seq); TRK_ROW_EDIT(&(trk)->pattern, name)
 
-    kk->volume = 0.3f;
+#define TRK_CELL_EDIT(row, cell_index)                   for (Trk_Cell* cell = &(row)->cells[cell_index]; cell != 0; cell = 0)
+#define TRK_CELL_RETRIG(cell, division, velocity, count) (cell)->retrig = (Trk_Retrig){division, velocity, count}
 
-    ch->volume = 0.4f;
-    ch->pan    = 0.7f;
+    TRK_ROW_NEW(trk, kk, STR_LIT("../data/kick.wav"),  STR_LIT("1010 0000 0110 0001"))
+    {
+        row->volume = 0.3f;
+    }
 
-    oh->volume = 0.4f;
-    // oh->cells[0].retrig = (Trk_Retrig){.division = 16.0f, .velocity = -0.0625f, .count = 32 };
-    // oh->cells[0].pitch = 0.25f;
+    TRK_ROW_NEW(trk, ch, STR_LIT("../data/ch.wav"),    STR_LIT("1111 1111 1111 1111"))
+    {
+        row->volume = 0.8f;
+        row->pan    = 0.7f;
+    }
 
-    ss->volume = 0.4f;
-    ss->pan    = 0.5f;
-    ss->cells[4].retrig = (Trk_Retrig){.division = 4.0f,  .velocity = -0.25f,  .count = 3 };
-    // ss->cells[5].retrig = (Trk_Retrig){.division = 16.0f, .velocity = 0.0625f, .count = 16 };
-    ss->cells[9].retrig = (Trk_Retrig){.division = 8.0f,  .velocity = 0.125f,  .count = 8 };
+    TRK_ROW_NEW(trk, oh, STR_LIT("../data/oh.wav"),    STR_LIT("1000 1000 0000 0000"))
+    {
+        row->volume = 0.4f;
+
+        TRK_CELL_EDIT(row, 0)
+        {
+            TRK_CELL_RETRIG(cell, .division=16.0f, .velocity=-0.0625f, .count=32);
+
+            cell->pitch = 0.25f;
+        }
+    }
+
+    TRK_ROW_NEW(trk, ss, STR_LIT("../data/snare.wav"), STR_LIT("0010 1100 1100 1001"))
+    {
+        row->volume = 0.4f;
+        row->pan    = 0.5f;
+        row->pitch  = 0.9f;
+
+        TRK_CELL_EDIT(row, 4) { TRK_CELL_RETRIG(cell, .division=4.0f,  .velocity=-0.25f,  .count=3);  }
+        TRK_CELL_EDIT(row, 5) { TRK_CELL_RETRIG(cell, .division=16.0f, .velocity=0.0625f, .count=16); }
+        TRK_CELL_EDIT(row, 9) { TRK_CELL_RETRIG(cell, .division=8.0f,  .velocity=0.125f,  .count=8);  }
+    }
 
     // recompute the beat playhead in case the BPM changed
-    f32 beats_per_second   = trk->pattern.bpm / 60.0f;
-    f32 samples_per_second = (f32)SUPPORTED_SAMPLE_RATE;
-    u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
-
-    trk->beat_playhead = trk->sample_playhead / samples_per_beat;
+    trk->beat_playhead = trk->sample_playhead / trk_samples_per_beat(trk->pattern.bpm, (f32)SUPPORTED_SAMPLE_RATE);
 
     trk_pattern_print(&trk->pattern);
 

@@ -166,29 +166,31 @@ static void trk_pattern_clear(Trk_Pattern* pattern)
     return;
 }
 
-static Trk_Row* trk_pattern_add_row(Arena* arena, Trk_Asset_Slop* asset_slop, Trk_Pattern* pattern, String file, String sequence)
+static u32 trk_pattern_add_row(Arena* arena, Trk_Asset_Slop* asset_slop, Trk_Pattern* pattern, String file, String sequence)
 {
-    Trk_Row* result = 0;
+    u32 result = 0;
 
     if (pattern->row_count < TRK_MAX_ROWS)
     {
         u32 row_index = pattern->row_count;
-        result = &pattern->rows[row_index];
+        Trk_Row* row = &pattern->rows[row_index];
 
-        trk_row_from_str(result, sequence);
+        trk_row_from_str(row, sequence);
 
-        result->asset_id = trk_asset_add(arena, asset_slop, file);
+        row->asset_id = trk_asset_add(arena, asset_slop, file);
 
-        result->volume = 1.0f;
-        result->pitch  = 1.0f;
-        result->pan    = 0.0f;
+        row->volume = 1.0f;
+        row->pitch  = 1.0f;
+        row->pan    = 0.0f;
 
-        result->trim_left = 0.0f;
-        result->trim_right = 0.0f;
+        row->trim_left = 0.0f;
+        row->trim_right = 0.0f;
 
-        result->solo = false;
+        row->solo = false;
 
         pattern->row_count += 1;
+
+        result = row_index;
     }
 
     return result;
@@ -308,9 +310,7 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 {
     if (pattern->bpm > 0)
     {
-        f32 beats_per_second   = pattern->bpm / 60.0f;
-        f32 samples_per_second = (f32)SUPPORTED_SAMPLE_RATE;
-        u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
+        u32 samples_per_beat = trk_samples_per_beat(pattern->bpm, (f32)SUPPORTED_SAMPLE_RATE);
 
         u32 samples_to_mix = 9600; // TODO[nr] @better
         samples_to_mix = samples_to_mix > samples_per_beat ? samples_per_beat : samples_to_mix; // clamp to samples per beat
@@ -576,4 +576,10 @@ static u32 trk_mix(Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* o
     return samples_to_mix;
 }
 
+static u32 trk_samples_per_beat(f32 bpm, f32 samples_per_second)
+{
+    f32 beats_per_second   = bpm / 60.0f;
+    u32 samples_per_beat   = (u32)(samples_per_second / beats_per_second);
 
+    return samples_per_beat;
+}
