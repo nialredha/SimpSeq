@@ -124,23 +124,18 @@ static u32        trk_sound_add(Trk_Sound_Slop* sound_slop, u32 asset_id);
 static void       trk_sound_rem(Trk_Sound_Slop* sound_slop, u32 slot_id);
 static Trk_Sound* trk_sound_get(Trk_Sound_Slop* sound_slop, u32 slot_id);
 
-static void     trk_pattern_init            (Trk_Pattern* pattern, f32 bpm, u32 num_steps);
-static void     trk_pattern_clear           (Trk_Pattern* pattern);
-static Trk_Row* trk_pattern_add_row         (Trk_Pattern* pattern);
-static Trk_Row* trk_pattern_set_row_from_str(Trk_Pattern* pattern, u32 row_id, String row_str);
-static Trk_Row* trk_pattern_add_row_from_str(Trk_Pattern* pattern, String row_str);
-static Trk_Row* trk_pattern_add_row_from_int(Trk_Pattern* pattern, u32 row_int);
-static void     trk_pattern_reset           (Trk_Pattern* pattern);
-static void     trk_pattern_print           (Trk_Pattern* pattern);
+static void trk_row_from_str(Trk_Row* row, String str);
+
+static void     trk_pattern_init   (Trk_Pattern* pattern, f32 bpm, u32 num_steps);
+static void     trk_pattern_clear  (Trk_Pattern* pattern);
+static Trk_Row* trk_pattern_add_row(Arena* arena, Trk_Asset_Slop* asset_slop, Trk_Pattern* pattern, String file, String sequence);
+static void     trk_pattern_reset   (Trk_Pattern* pattern);
+static void     trk_pattern_print   (Trk_Pattern* pattern);
 
 static void trk_init        (Trk* trk);
 static u32  trk_play_sound  (Trk* trk, u32 asset_id);
 static void trk_stop_sound  (Trk* trk, u32 sound_id);
 static void trk_play_pattern(Trk* state, Trk_Pattern* pattern, Ring_Buffer* out);
 static u32  trk_mix         (Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* out);
-
-void trk_module_post_load  (Trk* trk);
-void trk_module_post_reload(Trk* trk);
-void trk_module_update     (Trk* trk, Ring_Buffer* out);
 
 #endif // TRACKER_H

@@ -3,12 +3,13 @@
 #include "wav_dump_utils.h"
 #include "os_win32.h"
 
+#include "tracker.h"
+#include "tracker_module.h"
+
 #include "core.c"
 #include "wav.c"
 #include "wav_dump_utils.c"
 #include "os_win32.c"
-
-#include "tracker.h"
 
 typedef void (Trk_Module_Post_Load)(Trk* trk);
 typedef void (Trk_Module_Post_Reload)(Trk* trk);
