@@ -280,7 +280,7 @@ static void trk_init(Trk* trk)
     }
 
     arena_alloc(&trk->perm_arena, 16*1024*1024);
-    arena_alloc(&trk->tran_arena, 64*1024);
+    arena_alloc(&trk->tran_arena, 128*1024);
 
     return;
 }
@@ -392,6 +392,8 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
                                 sound->trim_left  = row->trim_left;
                                 sound->trim_right = row->trim_right;   
 
+                                sound->delay = cell->delay;
+
                                 sound->playhead = -1 * (div_index * samples_per_div);
                                 // printf("div_index %u, count %u, samples_per_div %u, playhead %d\n\n", div_index, cell->retrig.count, samples_per_div, sound->playhead);
                             }
@@ -414,6 +416,8 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 
                             sound->trim_left  = row->trim_left;
                             sound->trim_right = row->trim_right;
+
+                            sound->delay = cell->delay;
                         }
 
                         // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, pattern->rows[row_index].asset_id, sound->playhead);
@@ -450,22 +454,24 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
             }
         }
 
-        f32* mix_buffer = ARENA_PUSH_ARRAY(&trk->tran_arena, f32, samples_to_mix);
-        trk->sample_playhead += trk_mix(trk, mix_buffer, samples_to_mix, out);
+        trk->sample_playhead += trk_mix(trk, samples_to_mix, out);
     }
 }
 
-static u32 trk_mix(Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* out)
+static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
 {
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     // TODO[nr] @better: this whole thing depends on the WAV being f32 48KHz stereo!
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+    f32* dry_mix_buffer = ARENA_PUSH_ARRAY(&trk->tran_arena, f32, samples_to_mix);
+    f32* wet_mix_buffer = ARENA_PUSH_ARRAY(&trk->tran_arena, f32, samples_to_mix);
+
     Trk_Asset_Slop* assets = &trk->asset_slop;
     Trk_Sound_Slop* sounds = &trk->sound_slop;
 
     u32 bytes_available   = (u32)out->amount_free;
-    u32 bytes_per_sample  = sizeof(*mix_buffer);
+    u32 bytes_per_sample  = sizeof(*dry_mix_buffer);
     u32 samples_available = bytes_available / bytes_per_sample;
 
     samples_to_mix = samples_available < samples_to_mix ? samples_available : samples_to_mix;
@@ -473,7 +479,8 @@ static u32 trk_mix(Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* o
     // clear buffer
     for (u32 mix_index = 0; mix_index < samples_to_mix; ++mix_index)
     {
-        mix_buffer[mix_index] = 0;
+        dry_mix_buffer[mix_index] = 0;
+        wet_mix_buffer[mix_index] = 0;
     }
 
     for (u32 sound_id = sounds->slop.first_slot; sound_id != 0; )
@@ -541,8 +548,14 @@ static u32 trk_mix(Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* o
                 sample_1 = lerp(sample_1, sample_3, frac);
             }               
 
-            mix_buffer[mix_index]     += (sample_0 * sound->volume * pan_0);
-            mix_buffer[mix_index + 1] += (sample_1 * sound->volume * pan_1);
+            f32 mix_l = (sample_0 * sound->volume * pan_0);
+            f32 mix_r = (sample_1 * sound->volume * pan_1);
+
+            dry_mix_buffer[mix_index]     += mix_l;
+            dry_mix_buffer[mix_index + 1] += mix_r;
+
+            wet_mix_buffer[mix_index]     += mix_l * sound->delay;
+            wet_mix_buffer[mix_index + 1] += mix_r * sound->delay;
 
             mix_index += 2;
         }
@@ -567,9 +580,16 @@ static u32 trk_mix(Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* o
 
     }
 
+    // pour wet into dry
+    for (u32 i = 0; i < samples_to_mix; i+=2)
+    {
+        dry_mix_buffer[i]   += fx_feedback_comb_step(&trk->feedback_comb_l, wet_mix_buffer[i]);
+        dry_mix_buffer[i+1] += fx_feedback_comb_step(&trk->feedback_comb_r, wet_mix_buffer[i+1]);
+    }
+
     u32 bytes_mixed = samples_to_mix * bytes_per_sample;
 
-    u32 bytes_written = rb_write(out, (u8*)mix_buffer, bytes_mixed);
+    u32 bytes_written = rb_write(out, (u8*)dry_mix_buffer, bytes_mixed);
 
     assert(bytes_written == bytes_mixed);
 

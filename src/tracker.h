@@ -39,6 +39,8 @@ typedef struct
     f32 trim_left;
     f32 trim_right;
 
+    f32 delay;
+
     bool loop;
 } Trk_Sound;
 
@@ -63,6 +65,8 @@ typedef struct
     f32  volume;
     f32  pitch;
     f32  pan;
+
+    f32 delay;
 
     Trk_Retrig retrig;
 } Trk_Cell;
@@ -111,6 +115,9 @@ typedef struct
     Trk_Asset_Slop asset_slop;
     Trk_Sound_Slop sound_slop;
 
+    FX_Feedback_Comb feedback_comb_l;
+    FX_Feedback_Comb feedback_comb_r;
+
     Arena perm_arena;
     Arena tran_arena;
 } Trk;
@@ -136,7 +143,7 @@ static void trk_init        (Trk* trk);
 static u32  trk_play_sound  (Trk* trk, u32 asset_id);
 static void trk_stop_sound  (Trk* trk, u32 sound_id);
 static void trk_play_pattern(Trk* state, Trk_Pattern* pattern, Ring_Buffer* out);
-static u32  trk_mix         (Trk* trk, f32* mix_buffer, u32 samples_to_mix, Ring_Buffer* out);
+static u32  trk_mix         (Trk* trk, u32 samples_to_mix, Ring_Buffer* out);
 
 static u32 trk_samples_per_beat(f32 bpm, f32 sample_rate);
 

@@ -3,6 +3,7 @@
 #include "wav_dump_utils.h"
 #include "os_win32.h"
 
+#include "fx.h"
 #include "tracker.h"
 #include "tracker_module.h"
 
