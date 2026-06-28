@@ -14,40 +14,38 @@
 
 typedef struct
 {
-    String filename;
-
+    String     filename;
     Wav_Format format;
     Wav_Data   data;
 } Trk_Asset;
 
 typedef struct
 {
-    Slop slop;
-
+    Slop      slop;
     Trk_Asset assets[SLOP_MAX_SLOTS];
 } Trk_Asset_Slop;
 
 typedef struct
 {
-    u32 asset_id;
-    s32 playhead;
+    f32 volume;     // multiply
+    f32 pan;        // add
+    f32 pitch;      // multiply
+    f32 trim_left;  // multiply
+    f32 trim_right; // multiply
+    f32 delay;      // multiply
+} Trk_Params;
 
-    f32 volume;
-    f32 pan;
-    f32 pitch;
-
-    f32 trim_left;
-    f32 trim_right;
-
-    f32 delay;
-
-    bool loop;
+typedef struct
+{
+    u32        asset_id;
+    s32        playhead;
+    Trk_Params params;
+    bool       loop;
 } Trk_Sound;
 
 typedef struct
 {
-    Slop slop;
-
+    Slop      slop;
     Trk_Sound sounds[SLOP_MAX_SLOTS];
 } Trk_Sound_Slop;
 
@@ -60,39 +58,22 @@ typedef struct
 
 typedef struct
 {
-    bool active;
-
-    f32  volume;
-    f32  pitch;
-    f32  pan;
-
-    f32 delay;
-
+    bool       active;
+    Trk_Params params;
     Trk_Retrig retrig;
 } Trk_Cell;
 
 typedef struct
 {
-    // TODO[nr]: replace with sound struct
-    u32 asset_id;
-
-    f32 volume;
-    f32 pitch;
-    f32 pan;
-
-    f32 trim_left;
-    f32 trim_right;
-    // TODO[nr]: replace with sound struct
-
-    bool solo;
-
-    Trk_Cell cells[TRK_MAX_CELLS];
+    u32        asset_id;
+    Trk_Params params;
+    bool       solo;
+    Trk_Cell   cells[TRK_MAX_CELLS];
 } Trk_Row;
 
 typedef struct
 {
     f32 bpm;
-
     f32 volume;
     f32 pitch;
     f32 pan;
@@ -130,6 +111,8 @@ static Trk_Asset* trk_asset_find_or_load(Arena* arena, Trk_Asset_Slop* asset_slo
 static u32        trk_sound_add(Trk_Sound_Slop* sound_slop, u32 asset_id);
 static void       trk_sound_rem(Trk_Sound_Slop* sound_slop, u32 slot_id);
 static Trk_Sound* trk_sound_get(Trk_Sound_Slop* sound_slop, u32 slot_id);
+
+static void trk_params_init(Trk_Params* params);
 
 static void trk_row_from_str(Trk_Row* row, String str);
 

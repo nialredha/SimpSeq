@@ -27,7 +27,7 @@ void trk_module_post_reload(Trk* trk)
 {
     trk_pattern_reset(&trk->pattern);
 
-    trk->pattern.bpm        = 120;
+    trk->pattern.bpm        = 180;
     trk->pattern.volume     = 0.9f;
     trk->pattern.cell_count = 16;
     trk->pattern.loop       = true;
@@ -37,8 +37,8 @@ void trk_module_post_reload(Trk* trk)
     printf("DELAY SIZE: %u\n", delay_size);
 
     // TODO[nr] @leak
-    trk->feedback_comb_l = fx_feedback_comb_init(&trk->perm_arena, delay_size*2, 0.7f, 0.9f);
-    trk->feedback_comb_r = fx_feedback_comb_init(&trk->perm_arena, delay_size, 0.7f, 0.8f);
+    trk->feedback_comb_l = fx_feedback_comb_init(&trk->perm_arena, (u32)(delay_size/1.5f), 0.5f, 0.6f);
+    trk->feedback_comb_r = fx_feedback_comb_init(&trk->perm_arena, (u32)(delay_size/1.5f), 0.5f, 0.6f);
 
 #define TRK_ROW_EDIT(pattern, row_index)   for (Trk_Row* row = &(pattern)->rows[row_index]; row != 0; row = 0)
 #define TRK_ROW_NEW(trk, name, fname, seq) u32 name = trk_pattern_add_row(&(trk)->perm_arena, &(trk)->asset_slop, &(trk)->pattern, fname, seq); TRK_ROW_EDIT(&(trk)->pattern, name)
@@ -46,102 +46,46 @@ void trk_module_post_reload(Trk* trk)
 #define TRK_CELL_EDIT(row, cell_index)                   for (Trk_Cell* cell = &(row)->cells[cell_index]; cell != 0; cell = 0)
 #define TRK_CELL_RETRIG(cell, division, velocity, count) (cell)->retrig = (Trk_Retrig){division, velocity, count}
 
-    // TODO[nr]: ability to do trimming at a cell level and delay at a row level
-    TRK_ROW_NEW(trk, v1, STR_LIT("../data/vocals1.wav"),  STR_LIT("0010 0000 0000 0000"))
-    {
-        row->volume     = 0.3f;
-        row->trim_left  = 0.1f;
-        row->trim_right = 0.77f;
-    }
-
     TRK_ROW_NEW(trk, v2, STR_LIT("../data/vocals1.wav"),  STR_LIT("0001 0010 1000 1010"))
     {
-        row->volume     = 0.1f;
-        row->trim_left  = 0.25f;
-        row->trim_right = 0.67f;
+        row->params.volume     = 0.1f;
+        row->params.trim_left  = 0.25f;
+        row->params.trim_right = 0.67f;
+        row->params.delay      = 1.0f;
     }
 
-    TRK_ROW_NEW(trk, v3, STR_LIT("../data/vocals1.wav"),  STR_LIT("0000 0000 1001 0000"))
+    TRK_ROW_NEW(trk, kk, STR_LIT("../data/kick.wav"),  STR_LIT("1000 1000 1000 1000"))
     {
-        row->volume     = 0.3f;
-        row->trim_left  = 0.34f;
-        row->trim_right = 0.6f;
-
-        TRK_CELL_EDIT(row, 8)
-        {
-            cell->delay = 1.0f;
-        }
-
-        TRK_CELL_EDIT(row, 11)
-        {
-            TRK_CELL_RETRIG(cell, .division=32.0f, .velocity=-0.025f, .count=32);
-            cell->volume = 0.2f;
-            cell->delay = 0.9f;
-        }
+        row->params.volume = 0.2f;
     }
 
-    TRK_ROW_NEW(trk, v4, STR_LIT("../data/vocals1.wav"),  STR_LIT("0000 0000 0000 1000"))
+    TRK_ROW_NEW(trk, ch, STR_LIT("../data/ch.wav"),    STR_LIT("1010 1010 1010 1010"))
     {
-        row->volume     = 0.3f;
-        row->trim_left  = 0.46f;
-        row->trim_right = 0.455f;
-
-        TRK_CELL_EDIT(row, 12)
-        {
-            cell->delay = 0.5f;
-        }
-    }
-
-    TRK_ROW_NEW(trk, v5, STR_LIT("../data/vocals1.wav"),  STR_LIT("0000 0000 0000 0001"))
-    {
-        row->volume     = 0.3f;
-        row->trim_left  = 0.5f;
-        row->trim_right = 0.32f;
-
-        TRK_CELL_EDIT(row, 12)
-        {
-            cell->delay = 0.8f;
-        }
-    }
-
-    TRK_ROW_NEW(trk, kk, STR_LIT("../data/kick.wav"),  STR_LIT("1010 0010 0010 0010"))
-    {
-        row->volume = 0.4f;
-    }
-
-    TRK_ROW_NEW(trk, ch, STR_LIT("../data/ch.wav"),    STR_LIT("1111 1111 1111 1111"))
-    {
-        row->volume = 0.8f;
-        row->pan    = 0.2f;
+        row->params.volume = 0.8f;
+        row->params.pan    = 0.2f;
 
 #if 1 
-        TRK_CELL_EDIT(row, 0)  { cell->delay = 1.0f; }
-        TRK_CELL_EDIT(row, 4)  { cell->delay = 1.0f; }
-        TRK_CELL_EDIT(row, 8)  { cell->delay = 1.0f; }
-        TRK_CELL_EDIT(row, 12) { cell->delay = 1.0f; }
+        TRK_CELL_EDIT(row, 0)  { cell->params.delay = 1.0f; }
+        TRK_CELL_EDIT(row, 2)  { cell->params.delay = 1.0f; }
+        TRK_CELL_EDIT(row, 4)  { cell->params.delay = 1.0f; }
+        TRK_CELL_EDIT(row, 6)  { cell->params.delay = 1.0f; }
 #endif
     }
 
     TRK_ROW_NEW(trk, oh, STR_LIT("../data/oh.wav"),    STR_LIT("0100 1000 0010 0000"))
     {
-        row->volume = 0.4f;
-        row->pitch = 0.95f;
-
-        TRK_CELL_EDIT(row, 1)  { cell->delay = 0.8f; }
-        TRK_CELL_EDIT(row, 10) { cell->delay = 0.8f; }
+        row->params.volume = 0.1f;
+        row->params.pitch = 0.1f;
     }
 
     TRK_ROW_NEW(trk, ss, STR_LIT("../data/snare.wav"), STR_LIT("0000 0010 0000 0010"))
     {
-        row->volume = 0.4f;
-        row->pan    = 0.0f;
-        row->pitch  = 0.9f;
+        row->params.volume = 0.2f;
+        row->params.pan    = 0.0f;
+        row->params.pitch  = 0.9f;
 
-        TRK_CELL_EDIT(row, 4) 
-        { 
-            // TRK_CELL_RETRIG(cell, .division=4.0f, .velocity=-0.25f, .count=3); 
-            cell->delay = 0.6f;
-        }
+        TRK_CELL_EDIT(row, 6)  { cell->params.delay = 1.0f; }
+        TRK_CELL_EDIT(row, 14) { cell->params.delay = 1.0f; }
     }
 
     // recompute the beat playhead in case the BPM changed
