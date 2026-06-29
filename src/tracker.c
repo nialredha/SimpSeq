@@ -292,8 +292,9 @@ static void trk_init(Trk* trk)
         *dest++ = 0;
     }
 
-    arena_alloc(&trk->perm_arena, 16*1024*1024);
-    arena_alloc(&trk->tran_arena, 128*1024);
+    arena_alloc(&trk->perm_arena,   16*1024*1024); // 16MB
+    arena_alloc(&trk->reload_arena, 1*1024*1024);  // 1MB
+    arena_alloc(&trk->update_arena, 128*1024);     // 128KB
 
     return;
 }
@@ -355,9 +356,6 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
             if (cell_index >= trk->beat_playhead && cell_index < TRK_MAX_CELLS)
             {
                 // beat boundary!
-
-                // printf("cell_pos = %f, cell_index = %u, beat_playhead = %u, sample_playhead = %u, samples_per_beat = %u\n", cell_pos, cell_index, trk->beat_playhead, trk->sample_playhead, samples_per_beat);
-
                 for (u32 row_index = 0; row_index < pattern->row_count; ++row_index)
                 {
                     Trk_Row* row = &pattern->rows[row_index];
@@ -367,97 +365,48 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 
                     if (cell->active)
                     {
+                        Trk_Params params = {0};
+                        {
+                            params.volume     = pattern->volume * row->params.volume * cell->params.volume;
+                            params.pitch      = row->params.pitch * cell->params.pitch;
+                            params.trim_left  = row->params.trim_left * cell->params.trim_left;
+                            params.trim_right = row->params.trim_right * cell->params.trim_right;
+                            params.delay      = row->params.delay * cell->params.delay;
+
+                            f32 pan           = row->params.pan + cell->params.pan;
+                            params.pan = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
+                        }
+
+                        u32 sound_id     = trk_play_sound(trk, row->asset_id);
+                        Trk_Sound* sound = trk_sound_get(&trk->sound_slop, sound_id);
+                        sound->params    = params;
+
                         // retrig enabled
                         if (cell->retrig.count > 0 && cell->retrig.division > 1)
                         {
+                            assert(cell->retrig.count <= cell->retrig.division);
+
                             u32 samples_per_div = (u32)((f32)samples_per_beat / cell->retrig.division);
 
-                            for (u32 div_index = 0; div_index < cell->retrig.count; ++div_index)
+                            for (u32 div_index = 1; div_index <= cell->retrig.count; ++div_index)
                             {
-                                u32 sound_id = trk_play_sound(trk, row->asset_id);
-                                Trk_Sound* sound = trk_sound_get(&trk->sound_slop, sound_id);
+                                sound_id      = trk_play_sound(trk, row->asset_id);
+                                sound         = trk_sound_get(&trk->sound_slop, sound_id);
+                                sound->params = params;
 
                                 f32 a = cell->params.volume;
                                 f32 b = 0.2f;
                                 f32 t = cell->retrig.velocity * div_index;
+                                if (cell->retrig.velocity < 0) { t *= -1;    }
+                                else                           { t  = 1 - t; }
 
-                                if (cell->retrig.velocity < 0)
-                                {
-                                    t *= -1;
-                                }
-                                else
-                                {
-                                    t = 1 - t;
-                                }
-
-                                f32 cell_volume = lerp(a, b, t);
-
+                                f32 cell_volume      = lerp(a, b, t);
                                 sound->params.volume = pattern->volume * row->params.volume * cell_volume;
 
-                                // printf("retrig a: %f, b: %f, t: %f, cell_volume: %f, actual volume: %f\n", a, b, t, cell_volume, sound->volume);
-
-                                f32 pan           = row->params.pan + cell->params.pan;
-                                sound->params.pan = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
-
-                                sound->params.pitch  = row->params.pitch * cell->params.pitch;
-
-                                sound->params.trim_left  = row->params.trim_left;
-                                sound->params.trim_right = row->params.trim_right;
-                                if (cell->params.trim_left  > 0) { sound->params.trim_left  *= cell->params.trim_left;  }
-                                if (cell->params.trim_right > 0) { sound->params.trim_right *= cell->params.trim_right; }
-
-                                if (row->params.delay == 0)
-                                {
-                                    sound->params.delay = cell->params.delay;
-                                }
-                                else if (cell->params.delay == 0)
-                                {
-                                    sound->params.delay = row->params.delay;
-                                }
-                                else
-                                {
-                                    sound->params.delay = row->params.delay * cell->params.delay;
-                                }
 
                                 sound->playhead = -1 * (div_index * samples_per_div);
-                                // printf("div_index %u, count %u, samples_per_div %u, playhead %d\n\n", div_index, cell->retrig.count, samples_per_div, sound->playhead);
-                            }
-                            // printf("\n");
-
-                            // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, pattern->rows[row_index].asset_id, sound->playhead);
-                        }
-                        else
-                        {
-                            u32 sound_id = trk_play_sound(trk, row->asset_id);
-                            Trk_Sound* sound = trk_sound_get(&trk->sound_slop, sound_id);
-
-                            sound->params.volume = pattern->volume * row->params.volume * cell->params.volume;
-
-                            f32 pan           = row->params.pan + cell->params.pan;
-                            sound->params.pan = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
-
-                            sound->params.pitch  = row->params.pitch * cell->params.pitch;
-
-                            sound->params.trim_left  = row->params.trim_left;
-                            sound->params.trim_right = row->params.trim_right;
-                            if (cell->params.trim_left  > 0) { sound->params.trim_left  *= cell->params.trim_left;  }
-                            if (cell->params.trim_right > 0) { sound->params.trim_right *= cell->params.trim_right; }
-
-                            if (row->params.delay == 0)
-                            {
-                                sound->params.delay = cell->params.delay;
-                            }
-                            else if (cell->params.delay == 0)
-                            {
-                                sound->params.delay = row->params.delay;
-                            }
-                            else
-                            {
-                                sound->params.delay = row->params.delay * cell->params.delay;
                             }
                         }
-
-                        // printf("playing  sound! sound_id: %u, asset_id: %u, playhead: %u\n", sound_id, pattern->rows[row_index].asset_id, sound->playhead);
                     }
                 }
 
@@ -501,8 +450,8 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
     // TODO[nr] @better: this whole thing depends on the WAV being f32 48KHz stereo!
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    f32* dry_mix_buffer = ARENA_PUSH_ARRAY(&trk->tran_arena, f32, samples_to_mix);
-    f32* wet_mix_buffer = ARENA_PUSH_ARRAY(&trk->tran_arena, f32, samples_to_mix);
+    f32* dry_mix_buffer = ARENA_PUSH_ARRAY(&trk->update_arena, f32, samples_to_mix);
+    f32* wet_mix_buffer = ARENA_PUSH_ARRAY(&trk->update_arena, f32, samples_to_mix);
 
     Trk_Asset_Slop* assets = &trk->asset_slop;
     Trk_Sound_Slop* sounds = &trk->sound_slop;

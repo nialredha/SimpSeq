@@ -100,7 +100,8 @@ typedef struct
     FX_Feedback_Comb feedback_comb_r;
 
     Arena perm_arena;
-    Arena tran_arena;
+    Arena reload_arena;
+    Arena update_arena;
 } Trk;
 
 static u32        trk_asset_add         (Arena* arena, Trk_Asset_Slop* asset_slop, String filename);
