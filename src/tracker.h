@@ -87,6 +87,7 @@ typedef struct
     u32 row_count;
 
     bool loop;
+    bool no_fx;
 
     Trk_Row rows[TRK_MAX_ROWS];
 } Trk_Pattern;

@@ -118,13 +118,6 @@ static f32 fx_envelope_step(FX_Envelope* env, f32 value, u32 sample_len, u32 sam
     f32 t = 0.0f;
     f32 volume = 0.0f;
 
-    // att: 0.2 -> [0.0 , 0.2)
-    // dec: 0.2 -> [0.2 , 0.4)
-    // sus: ... -> [0.4 , 0.9)
-    // rel: 0.1 -> [0.9 , 1.0]
-
-    f32 frac_norm = sample_frac;
-
     if (sample_frac < env->att)
     {
         // attack
@@ -135,7 +128,7 @@ static f32 fx_envelope_step(FX_Envelope* env, f32 value, u32 sample_len, u32 sam
     else if (sample_frac < (env->att + env->dec))
     {
         // decay
-        frac_norm = sample_frac - env->att;
+        f32 frac_norm = sample_frac - env->att;
         t = frac_norm / env->dec;
         volume = lerp(1.0f, env->sus, t);
     }
@@ -147,7 +140,7 @@ static f32 fx_envelope_step(FX_Envelope* env, f32 value, u32 sample_len, u32 sam
     else if (sample_frac > (1 - env->rel))
     {
         // release
-        frac_norm = sample_frac - (1 - env->rel);
+        f32 frac_norm = sample_frac - (1 - env->rel);
         t = frac_norm / env->rel;
         volume = lerp(env->sus, 0.0f, t);
     }
@@ -155,8 +148,6 @@ static f32 fx_envelope_step(FX_Envelope* env, f32 value, u32 sample_len, u32 sam
     {
         return value;
     }
-
-    // printf("%u, %u, %f, %f, %f, %f,\n", sample_len, sample_pos, sample_frac, frac_norm, t, volume);
 
     f32 result = value * volume;
     return result;

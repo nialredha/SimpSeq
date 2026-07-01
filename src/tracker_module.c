@@ -60,6 +60,7 @@ void trk_module_post_reload(Trk* trk)
         TRK_CELL_EDIT(row, 8) { cell->params.pitch = 1.6f; cell->params.delay = 0.5f;  }
         TRK_CELL_EDIT(row, 14) { cell->params.pitch = 1.5f; cell->params.delay = 1.0f; }
     }
+
     TRK_ROW_NEW(trk, v3, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 1000 1000 1000"))
     {
         row->params.volume = 0.02f;

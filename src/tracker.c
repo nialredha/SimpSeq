@@ -141,7 +141,7 @@ static Trk_Sound* trk_sound_get(Trk_Sound_Slop* sound_slop, u32 slot_id)
 
 static void trk_params_init(Trk_Params* params)
 {
-    params->volume     = 1.0f;
+    params->volume     = 0.5f;
     params->pan        = 0.0f;
     params->pitch      = 1.0f;
     params->trim_left  = 0.0f;
@@ -247,7 +247,9 @@ static void trk_row_from_str(Trk_Row* row, String str)
 static void trk_pattern_reset(Trk_Pattern* pattern)
 {
     pattern->cell_count = 0;
-    pattern->row_count = 0;
+    pattern->row_count  = 0;
+    pattern->no_fx      = false;
+    pattern->loop       = false;
 
     return;
 }
@@ -326,6 +328,9 @@ static void trk_stop_sound(Trk* trk, u32 sound_id)
 
 static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 {
+    u32 bytes_available   = (u32)os_win32_atomic_compare_exchange_s64(&out->amount_free, 0, 0);
+    if (bytes_available == 0) { return; }
+
     if (pattern->bpm > 0)
     {
         u32 samples_per_beat = trk_samples_per_beat(pattern->bpm, (f32)SUPPORTED_SAMPLE_RATE);
@@ -370,9 +375,12 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 
                     if (cell->active)
                     {
-                        Trk_Params params = {0};
+                        Trk_Params params; 
+                        trk_params_init(&params);
+
+                        params.volume = pattern->volume * row->params.volume * cell->params.volume;
+                        if (!trk->pattern.no_fx)
                         {
-                            params.volume     = pattern->volume * row->params.volume * cell->params.volume;
                             params.pitch      = row->params.pitch * cell->params.pitch;
                             params.trim_left  = row->params.trim_left * cell->params.trim_left;
                             params.trim_right = row->params.trim_right * cell->params.trim_right;
@@ -426,7 +434,8 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
             else
             {
                 // between beats!
-                u32 samples_til_next_beat = trk->sample_playhead % samples_per_beat;
+                u32 playhead_norm = trk->sample_playhead % samples_per_beat;
+                u32 samples_til_next_beat = samples_per_beat - playhead_norm;
 
                 if (samples_til_next_beat == 0)
                 {
@@ -467,8 +476,10 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
     Trk_Asset_Slop* assets = &trk->asset_slop;
     Trk_Sound_Slop* sounds = &trk->sound_slop;
 
-    u32 bytes_available   = (u32)out->amount_free;
-    u32 bytes_per_sample  = sizeof(*dry_mix_buffer);
+    u32 bytes_available   = (u32)os_win32_atomic_compare_exchange_s64(&out->amount_free, 0, 0);
+    if (bytes_available == 0) { return 0; }
+
+    u32 bytes_per_sample  = sizeof(4);
     u32 samples_available = bytes_available / bytes_per_sample;
 
     samples_to_mix = samples_available < samples_to_mix ? samples_available : samples_to_mix;
@@ -538,10 +549,9 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
         u32 sample_index = 0;
         f32 d_sample = sound->params.pitch;
 
-        // f32 frames_remain = ((f32)(samples_in_asset - (sound->params.trim_left + sound->playhead))) / 2.0f;
         f32 frames_remain = ((f32)(samples_in_asset - sound->playhead)) / 2.0f;
 
-        for (f32 frame_pos = 0; frame_pos <= frames_remain; frame_pos += d_sample)
+        for (f32 frame_pos = 0; frame_pos < frames_remain; frame_pos += d_sample)
         {
             if (mix_index >= samples_to_mix) { break; }
 
@@ -583,14 +593,12 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
             mix_index += 2;
         }
 
-        sound->playhead += (sample_index + 1);
+        sound->playhead += sample_index + 2;
 
         u32 next_sound_id = sounds->slop.slots[sound_id].next;
 
         if (sound->playhead >= (s32)samples_in_asset)
         {
-            // printf("len,pos,frac,t,volume\n");
-            // assert(false);
             if (sound->loop)
             {
                 sound->playhead = 0;
