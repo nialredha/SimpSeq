@@ -148,6 +148,9 @@ static void trk_params_init(Trk_Params* params)
     params->trim_right = 0.0f;
     params->delay      = 0.0f;
 
+    params->use_envelope = false;
+    params->envelope = (FX_Envelope){0};
+
     return;
 }
 
@@ -193,7 +196,8 @@ static u32 trk_pattern_add_row(Arena* arena, Trk_Asset_Slop* asset_slop, Trk_Pat
 
         trk_params_init(&row->params);
 
-        row->solo = false;
+        row->solo       = false;
+        row->mute       = false;
 
         pattern->row_count += 1;
 
@@ -358,10 +362,11 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
                 // beat boundary!
                 for (u32 row_index = 0; row_index < pattern->row_count; ++row_index)
                 {
-                    Trk_Row* row = &pattern->rows[row_index];
-                    if (solo_enabled && !row->solo) { continue; }
-
+                    Trk_Row* row   = &pattern->rows[row_index];
                     Trk_Cell* cell = &row->cells[cell_index];
+
+                    if (solo_enabled && !row->solo) { continue; }
+                    if (row->mute) { continue; }
 
                     if (cell->active)
                     {
@@ -375,6 +380,12 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
 
                             f32 pan           = row->params.pan + cell->params.pan;
                             params.pan = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
+
+                            params.use_envelope = row->params.use_envelope;
+                            params.envelope.att = row->params.envelope.att;
+                            params.envelope.dec = row->params.envelope.dec;
+                            params.envelope.sus = row->params.envelope.sus;
+                            params.envelope.rel = row->params.envelope.rel;
                         }
 
                         u32 sound_id     = trk_play_sound(trk, row->asset_id);
@@ -527,9 +538,10 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
         u32 sample_index = 0;
         f32 d_sample = sound->params.pitch;
 
-        f32 frames_remain = ((f32)(samples_in_asset - (sound->params.trim_left + sound->playhead))) / 2.0f;
+        // f32 frames_remain = ((f32)(samples_in_asset - (sound->params.trim_left + sound->playhead))) / 2.0f;
+        f32 frames_remain = ((f32)(samples_in_asset - sound->playhead)) / 2.0f;
 
-        for (f32 frame_pos = 0; frame_pos < frames_remain; frame_pos += d_sample)
+        for (f32 frame_pos = 0; frame_pos <= frames_remain; frame_pos += d_sample)
         {
             if (mix_index >= samples_to_mix) { break; }
 
@@ -554,6 +566,14 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
             f32 mix_l = (sample_0 * sound->params.volume * pan_0);
             f32 mix_r = (sample_1 * sound->params.volume * pan_1);
 
+            if (sound->params.use_envelope)
+            {
+                u32 frames_in_asset = (u32)(samples_in_asset/2);
+                u32 global_frame_index = (u32)((sound->playhead + sample_index)/2);
+                mix_l = fx_envelope_step(&sound->params.envelope, mix_l, frames_in_asset, global_frame_index);
+                mix_r = fx_envelope_step(&sound->params.envelope, mix_r, frames_in_asset, global_frame_index);
+            }
+
             dry_mix_buffer[mix_index]     += mix_l;
             dry_mix_buffer[mix_index + 1] += mix_r;
 
@@ -563,12 +583,14 @@ static u32 trk_mix(Trk* trk, u32 samples_to_mix, Ring_Buffer* out)
             mix_index += 2;
         }
 
-        sound->playhead += sample_index;
+        sound->playhead += (sample_index + 1);
 
         u32 next_sound_id = sounds->slop.slots[sound_id].next;
 
-        if (sound->playhead >= (s32)samples_in_asset - 2)
+        if (sound->playhead >= (s32)samples_in_asset)
         {
+            // printf("len,pos,frac,t,volume\n");
+            // assert(false);
             if (sound->loop)
             {
                 sound->playhead = 0;

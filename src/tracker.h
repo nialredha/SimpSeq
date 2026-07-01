@@ -33,6 +33,9 @@ typedef struct
     f32 trim_left;  // multiply
     f32 trim_right; // multiply
     f32 delay;      // multiply
+
+    bool use_envelope;
+    FX_Envelope envelope; // multiply
 } Trk_Params;
 
 typedef struct
@@ -67,8 +70,10 @@ typedef struct
 {
     u32        asset_id;
     Trk_Params params;
-    bool       solo;
     Trk_Cell   cells[TRK_MAX_CELLS];
+
+    bool solo;
+    bool mute;
 } Trk_Row;
 
 typedef struct

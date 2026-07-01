@@ -48,4 +48,14 @@ typedef struct
 static FX_Feedback_Comb fx_feedback_comb_init(Arena* arena, u32 capacity, f32 feedforward_coeff, f32 feedback_coeff);
 static f32              fx_feedback_comb_step(FX_Feedback_Comb* fbc, f32 value);
 
+typedef struct
+{
+    f32 att;
+    f32 dec;
+    f32 sus;
+    f32 rel;
+} FX_Envelope;
+
+static f32 fx_envelope_step(FX_Envelope* env, f32 value, u32 sample_len, u32 sample_pos);
+
 #endif // FX_H
