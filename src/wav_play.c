@@ -18,8 +18,17 @@ void audio_callback(Wav_Format* format, void* user_data, u32 num_frames_needed, 
     User_Data*   ud  = (User_Data*)user_data;
     Ring_Buffer* rb  = ud->rb;
 
-    u32 bytes_needed  = (num_frames_needed * format->num_channels) * (format->bits_per_sample / 8);
-    rb_read(rb, (u8*)output, bytes_needed);
+    u32 bytes_needed = (num_frames_needed * format->num_channels) * (format->bits_per_sample / 8);
+    u32 amount_read  = rb_read(rb, (u8*)output, bytes_needed);
+
+    if (amount_read < bytes_needed)
+    {
+        u8* dest = (u8*)output + amount_read;
+        for (u32 i = 0; i < bytes_needed - amount_read; ++i)
+        {
+            dest[i] = 0;
+        }
+    }
 }
 
 s32 entry_point(s32 arg_count, char** args)
@@ -57,6 +66,7 @@ s32 entry_point(s32 arg_count, char** args)
     f32 seconds_per_loop = 0.1f;
     u32 samples_per_loop = (u32)((seconds_per_loop * (f32)wav_fmt.sample_rate) * (f32)wav_fmt.num_channels);
     u32 bytes_per_loop   = samples_per_loop * (wav_fmt.bits_per_sample / 8);
+    printf("bytes_per_loop: %u\n", bytes_per_loop);
 
     Ring_Buffer rb = rb_create(bytes_per_loop*2);
 
@@ -104,6 +114,13 @@ s32 entry_point(s32 arg_count, char** args)
         u32 bytes_written = rb_write(&rb, &src[src_playhead], bytes_to_write);
         src_playhead += bytes_written;
     }
+
+    s32 cap = rb.capacity;
+    do 
+    { 
+        os_win32_atomic_compare_exchange_s32((s32 volatile *)&cap, 0, (s32)rb.amount_free); 
+        os_sleep_ms(100);
+    } while ((u32)cap == rb.capacity);
 
     // stop playing device
     result = os_win32_audio_stop(&device);

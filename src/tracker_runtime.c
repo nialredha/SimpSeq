@@ -27,8 +27,17 @@ void audio_callback(Wav_Format* format, void* user_data, u32 num_frames_needed, 
     User_Data*   ud  = (User_Data*)user_data;
     Ring_Buffer* rb  = ud->rb;
 
-    u32 bytes_needed  = (num_frames_needed * format->num_channels) * (format->bits_per_sample / 8);
-    rb_read(rb, (u8*)output, bytes_needed);
+    u32 bytes_needed = (num_frames_needed * format->num_channels) * (format->bits_per_sample / 8);
+    u32 amount_read  = rb_read(rb, (u8*)output, bytes_needed);
+
+    if (amount_read < bytes_needed)
+    {
+        u8* dest = (u8*)output + amount_read;
+        for (u32 i = 0; i < bytes_needed - amount_read; ++i)
+        {
+            dest[i] = 0;
+        }
+    }
 }
 
 s32 entry_point(s32 arg_count, char** args)

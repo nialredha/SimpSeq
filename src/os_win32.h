@@ -60,15 +60,21 @@ LARGE_INTEGER os_win32_get_performance_counter_frequency(void);
 
 #include <winnt.h>
 
-inline s32 os_win32_atomic_add_s32(LONG* volatile value, s32 addend)
+inline s32 os_win32_atomic_add_s32(s32 volatile *value, u32 addend)
 {
-    s32 result = _InterlockedExchangeAdd(value, addend);
+    s32 result = _InterlockedExchangeAdd((LONG volatile *)value, addend);
     return result;
 }
 
-inline s64 os_win32_atomic_add_s64(s64* volatile value, s64 addend)
+inline s64 os_win32_atomic_add_s64(s64 volatile *value, s64 addend)
 {
     s64 result = _InterlockedExchangeAdd64(value, addend);
+    return result;
+}
+
+inline s32 os_win32_atomic_compare_exchange_s32(s32 volatile *dest, s32 exchange, s32 comperand)
+{
+    s32 result = _InterlockedCompareExchange((LONG volatile *)dest, exchange, comperand);
     return result;
 }
 
