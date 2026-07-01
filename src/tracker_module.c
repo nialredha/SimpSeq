@@ -16,6 +16,12 @@
 #include "fx.c"
 #include "tracker.c"
 
+#define TRK_ROW_EDIT(pattern, row_index)   for (Trk_Row* row = &(pattern)->rows[row_index]; row != 0; row = 0)
+#define TRK_ROW_NEW(trk, name, fname, seq) u32 name = trk_pattern_add_row(&(trk)->perm_arena, &(trk)->asset_slop, &(trk)->pattern, fname, seq); TRK_ROW_EDIT(&(trk)->pattern, name)
+
+#define TRK_CELL_EDIT(row, cell_index)                   for (Trk_Cell* cell = &(row)->cells[cell_index]; cell != 0; cell = 0)
+#define TRK_CELL_RETRIG(cell, division, velocity, count) (cell)->retrig = (Trk_Retrig){division, velocity, count}
+
 void trk_module_post_load(Trk* trk)
 {
     // initialize memory
@@ -29,7 +35,10 @@ void trk_module_post_reload(Trk* trk)
 
     trk_pattern_reset(&trk->pattern);
 
-    trk->pattern.bpm        = 120;
+    // trk->pattern.bpm = 95;
+    trk->pattern.bpm    = 120;
+    // trk->pattern.bpm = 190;
+
     trk->pattern.volume     = 0.8f;
     trk->pattern.cell_count = 16;
     trk->pattern.loop       = true;
@@ -40,12 +49,6 @@ void trk_module_post_reload(Trk* trk)
     trk->feedback_comb_l = fx_feedback_comb_init(&trk->reload_arena, (u32)(delay_size/1.5f), 0.5f, 0.6f);
     trk->feedback_comb_r = fx_feedback_comb_init(&trk->reload_arena, (u32)(delay_size/3.0f), 0.5f, 0.6f);
 
-#define TRK_ROW_EDIT(pattern, row_index)   for (Trk_Row* row = &(pattern)->rows[row_index]; row != 0; row = 0)
-#define TRK_ROW_NEW(trk, name, fname, seq) u32 name = trk_pattern_add_row(&(trk)->perm_arena, &(trk)->asset_slop, &(trk)->pattern, fname, seq); TRK_ROW_EDIT(&(trk)->pattern, name)
-
-#define TRK_CELL_EDIT(row, cell_index)                   for (Trk_Cell* cell = &(row)->cells[cell_index]; cell != 0; cell = 0)
-#define TRK_CELL_RETRIG(cell, division, velocity, count) (cell)->retrig = (Trk_Retrig){division, velocity, count}
-
     TRK_ROW_NEW(trk, v2, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 0010 1000 0010"))
     {
         row->params.volume     = 0.1f;
@@ -53,24 +56,34 @@ void trk_module_post_reload(Trk* trk)
         row->params.trim_left  = 0.25f;
         row->params.trim_right = 0.5f;
 
-        TRK_CELL_EDIT(row, 6) { cell->params.pitch = 1.2f; cell->params.delay = 1.0f; }
-        TRK_CELL_EDIT(row, 8) { cell->params.pitch = 0.8f; }
+        TRK_CELL_EDIT(row, 6) { cell->params.pitch = 1.2f; cell->params.delay = 1.0f;  }
+        TRK_CELL_EDIT(row, 8) { cell->params.pitch = 1.6f; cell->params.delay = 0.5f;  }
         TRK_CELL_EDIT(row, 14) { cell->params.pitch = 1.5f; cell->params.delay = 1.0f; }
     }
-
-    // TRK_ROW_NEW(trk, v3, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 0000 0000 0000"))
-    TRK_ROW_NEW(trk, v3, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 0100 1000 0010"))
+    TRK_ROW_NEW(trk, v3, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 1000 1000 1000"))
     {
-        row->params.volume     = 0.4f;
-        row->params.delay      = 1.0f;
-        // row->params.trim_left  = 0.25f;
-        // row->params.trim_right = 0.5f;
+        row->params.volume = 0.02f;
+        row->params.delay  = 1.0f;
+        row->params.pan    = -0.5f;
+
+        TRK_CELL_EDIT(row, 0)  { cell->params.pitch = 0.8f; cell->params.delay = 0.5f; TRK_CELL_RETRIG(cell, .division=2, .velocity=-0.25, .count=1); }
+        TRK_CELL_EDIT(row, 4)  { cell->params.pitch = 0.8f; cell->params.delay = 0.5f; TRK_CELL_RETRIG(cell, .division=2, .velocity=-0.25, .count=1); }
+        TRK_CELL_EDIT(row, 8)  { cell->params.pitch = 0.8f; cell->params.delay = 0.5f; TRK_CELL_RETRIG(cell, .division=2, .velocity=-0.25, .count=1); }
+        TRK_CELL_EDIT(row, 12) { cell->params.pitch = 0.8f; cell->params.delay = 0.5f; TRK_CELL_RETRIG(cell, .division=2, .velocity=-0.25, .count=1); }
+    }
+
+    TRK_ROW_NEW(trk, v4, STR_LIT("../data/guitar.wav"),  STR_LIT("1001 0100 1000 0010"))
+    {
+        row->params.volume = 0.4f;
+        row->params.delay  = 1.0f;
         row->params.use_envelope = true;
         row->params.envelope     = (FX_Envelope){ .att = 0.75f, .dec = 0.25f, .sus = 0.25f, .rel = 0.0f };
 
-        TRK_CELL_EDIT(row, 0)  { cell->params.pitch = 2.0f; cell->params.delay = 1.0f; cell->params.envelope = row->params.envelope; }
-        TRK_CELL_EDIT(row, 8)  { cell->params.pitch = 3.2f; cell->params.delay = 1.0f; cell->params.envelope = row->params.envelope; }
-        TRK_CELL_EDIT(row, 14) { cell->params.pitch = 3.0f; cell->params.delay = 1.0f; cell->params.envelope = row->params.envelope; }
+        TRK_CELL_EDIT(row, 0)  { cell->params.pitch = 2.0f; cell->params.delay = 1.0f; }
+        TRK_CELL_EDIT(row, 3)  { cell->params.pitch = 4.0f; cell->params.delay = 0.5; cell->params.volume = 0.5f; }
+        TRK_CELL_EDIT(row, 5)  { cell->params.pitch = 4.0f; cell->params.delay = 0.5; cell->params.volume = 0.5f; }
+        TRK_CELL_EDIT(row, 8)  { cell->params.pitch = 3.2f; cell->params.delay = 1.0f; }
+        TRK_CELL_EDIT(row, 14) { cell->params.pitch = 3.0f; cell->params.delay = 1.0f; }
     }
 
     TRK_ROW_NEW(trk, kk, STR_LIT("../data/kick.wav"),  STR_LIT("1000 1000 1000 1000"))
@@ -84,12 +97,10 @@ void trk_module_post_reload(Trk* trk)
         row->params.pan    = 0.5f;
         row->params.delay  = 1.0f;
 
-#if 1 
         TRK_CELL_EDIT(row, 0)  { cell->params.delay = 1.0f; }
         TRK_CELL_EDIT(row, 2)  { cell->params.delay = 1.0f; }
         TRK_CELL_EDIT(row, 4)  { cell->params.delay = 1.0f; }
         TRK_CELL_EDIT(row, 6)  { cell->params.delay = 1.0f; }
-#endif
     }
 
     TRK_ROW_NEW(trk, oh, STR_LIT("../data/oh.wav"),    STR_LIT("0000 0010 0000 0010"))
