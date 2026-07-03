@@ -94,6 +94,8 @@ typedef struct
 
 typedef struct
 {
+    bool render_to_file;
+
     Trk_Pattern pattern;
 
     u32  beat_playhead;

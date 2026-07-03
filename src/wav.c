@@ -1,3 +1,7 @@
+//
+// parse
+//
+
 Wav_List wav_list_from_data(Arena* arena, String data)
 {
     Wav_List list = {0};
@@ -181,6 +185,160 @@ Wav_Data wav_get_data(Arena* arena, Wav_Sub_Chunk_List* list, String data)
 
     return result;
 }
+
+//
+// render
+//
+
+bool wav_render_entire_file(Arena* arena, Wav_Render_Params params, Wav_Data data, String filename)
+{
+    Wav_Data render_data = wav_render(arena, params, data);
+
+    String render_content = { .data = (char*)render_data.buffer, .count = render_data.size };
+
+    bool result = os_write_entire_file(filename, render_content);
+
+    return result;
+}
+
+bool wav_render_append_data_to_file(String filename, Wav_Data data)
+{
+    (void)data;
+    (void)filename;
+
+    bool result = false;
+
+#if 0
+
+    Arena_Temp temp_arena = arena_temp_begin(arena);
+    {
+        String file_data = os_read_from_file(filename, 0, WAV_MIN_FILE_SIZE_FROM_DATA_SIZE(0));
+        Wav_Sub_Chunk_List sub_chunks = wav_sub_chunk_list_from_data(arena, file_data)
+
+        // get RIFF chunk
+        String file_data = os_read_from_file(filename, 0, sizeof(Wav_RIFF_Chunk));
+        Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)file_data.data;
+
+        assert(riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID));
+        assert(riff_chunk->format    == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT));
+
+        // update RIFF chunk header to reflect new size
+        {
+            riff_chunk->header.size += data.size;
+            result = os_write_to_file(filename, file_data, 0);
+        }
+
+        // append new data
+        if (result)
+        {
+            String contents = { .data = (char*)data.buffer, .count = data.size };
+            result = os_append_to_file(filename, contents);
+        }
+    }
+    arena_temp_end(temp_arena);
+#endif
+
+    return result;
+}
+
+Wav_Data wav_render(Arena* arena, Wav_Render_Params params, Wav_Data data)
+{
+    Wav_Data render = {0};
+    {
+        u32 render_size = WAV_MIN_FILE_SIZE_FROM_DATA_SIZE(data.size);
+
+        render.buffer = ARENA_PUSH_ARRAY(arena, u8, render_size);
+        render.size = render_size;
+
+        u32 write_head = 0;
+
+        // RIFF chunk
+        {
+            Wav_RIFF_Chunk riff_chunk = { 
+                .header = { 
+                    .id = WAV_FOURCC(WAV_RIFF_CHUNK_ID), 
+                    .size = render_size - sizeof(Wav_Chunk_Header) 
+                },
+                .format = WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT)
+            };
+
+            // write riff chunk
+            Wav_RIFF_Chunk* dest = (Wav_RIFF_Chunk*)render.buffer;
+            *dest = riff_chunk;
+
+            write_head += sizeof(Wav_RIFF_Chunk);
+        }
+
+        // fmt chunk
+        {
+            Wav_Chunk_Header format_header = { .id = WAV_FOURCC(WAV_FORMAT_CHUNK_ID), .size = WAV_FORMAT_SIZE };
+
+            Wav_Format format = {
+                .format_tag      = Wav_Format_Tag_IEE_FLOAT,
+                .num_channels    = params.num_channels,
+                .sample_rate     = params.sample_rate,
+                .byte_rate       = params.sample_rate * params.bytes_per_sample * params.num_channels,
+                .block_align     = params.bytes_per_sample * params.num_channels,
+                .bits_per_sample = params.bytes_per_sample * 8
+            };
+
+            // write format header
+            {
+                Wav_Chunk_Header* dest = (Wav_Chunk_Header*)(render.buffer + write_head);
+                *dest = format_header;
+
+                write_head += sizeof(Wav_Chunk_Header);
+            }
+
+
+            // write format data
+            {
+                u8* src  = (u8*)&format;
+                u8* dest = render.buffer + write_head;
+                for (u32 i = 0; i < WAV_FORMAT_SIZE; ++i)
+                {
+                    *dest++ = *src++;
+                }
+
+                write_head += WAV_FORMAT_SIZE;
+            }
+        }
+
+        // data chunk
+        {
+            // write data header
+            {
+                Wav_Chunk_Header data_header = { .id = WAV_FOURCC(WAV_DATA_CHUNK_ID), .size = data.size };
+
+                Wav_Chunk_Header* dest = (Wav_Chunk_Header*)(render.buffer + write_head);
+                *dest = data_header;
+
+                write_head += sizeof(Wav_Chunk_Header);
+            }
+
+            // write data
+            if (data.buffer != 0 && data.size > 0)
+            {
+                u8* src  = data.buffer;
+                u8* dest = render.buffer + write_head;
+                for (u32 i = 0; i < data.size; ++i)
+                {
+                    *dest++ = *src++;
+                }
+
+                write_head += data.size;
+            }
+        }
+
+        assert(render.size == write_head);
+    }
+
+    return render;
+}
+
+//
+// strings
+//
 
 String wav_string_from_format_tag(Wav_Format_Tag format_tag)
 {

@@ -410,7 +410,10 @@ static u32 rb_read(Ring_Buffer* rb, u8* dest, u32 dest_amount)
         {
             *dest++ = *src++;
         }
+
         rb->read_index = 0;
+        // os_win32_atomic_exchange((s32*)&rb->read_index, 0);
+
         amount_left -= amount_til_end;
     }
 
@@ -425,7 +428,10 @@ static u32 rb_read(Ring_Buffer* rb, u8* dest, u32 dest_amount)
         {
             *dest++ = *src++;
         }
+
         rb->read_index += amount_left;
+        // os_win32_atomic_add_s32((s32*)&rb->read_index, (s32)amount_left);
+
         amount_left = 0;
     }
 

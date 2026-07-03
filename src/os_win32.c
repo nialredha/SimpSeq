@@ -1,9 +1,9 @@
-OS_File_Properties os_get_file_properties(String filepath)
+static OS_File_Properties os_get_file_properties(String filename)
 {
     OS_File_Properties result = {0};
 
     WIN32_FIND_DATAA find_data = {0};
-    HANDLE file_handle = FindFirstFileA(filepath.data, &find_data);
+    HANDLE file_handle = FindFirstFileA(filename.data, &find_data);
 
     if(file_handle != INVALID_HANDLE_VALUE)
     {
@@ -22,11 +22,106 @@ OS_File_Properties os_get_file_properties(String filepath)
     return result;
 }
 
-String os_read_entire_file(String filepath)
+static String os_read_from_file(String filename, u32 byte_offset, u32 size)
 {
     String result = {0};
 
-    HANDLE file_handle = CreateFileA(filepath.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    HANDLE file_handle = CreateFileA(filename.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER file_size;
+        if (GetFileSizeEx(file_handle, &file_size))
+        {
+            if ((u32)file_size.QuadPart > byte_offset + size)
+            {
+                result.count = size;
+                result.data  = (char*)VirtualAlloc(0, result.count, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+                if (result.data)
+                {
+                    OVERLAPPED overlapped = {0};
+                    overlapped.Offset = byte_offset;
+
+                    DWORD bytes_read;
+                    if (!ReadFile(file_handle, result.data, result.count, &bytes_read, &overlapped) || 
+                        result.count != bytes_read)
+                    {
+                        // something went wrong
+
+                        VirtualFree(result.data, 0, MEM_RELEASE);
+
+                        result.data = 0;
+                        result.count = 0;
+                    }
+                }
+            }
+        }
+
+        CloseHandle(file_handle);
+    }
+
+    return result;
+}
+
+static bool os_write_to_file(String filename, String contents, u32 byte_offset)
+{
+    bool result = true;
+
+    HANDLE file_handle = CreateFileA(filename.data, GENERIC_WRITE, 0, 0, OPEN_ALWAYS, 0, 0);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        DWORD bytes_written;
+
+        OVERLAPPED overlapped = {0};
+        overlapped.Offset = byte_offset;
+
+        if (!WriteFile(file_handle, contents.data, contents.count, &bytes_written, &overlapped) || 
+            contents.count != bytes_written)
+        {
+            result = false;
+        }
+
+        CloseHandle(file_handle);
+    }
+    else
+    {
+        result = false;
+    }
+
+    return result;
+}
+
+static bool os_append_to_file(String filename, String contents)
+{
+    bool result = true;
+
+    HANDLE file_handle = CreateFileA(filename.data, FILE_APPEND_DATA, 0, 0, OPEN_ALWAYS, 0, 0);
+    if (file_handle != INVALID_HANDLE_VALUE)
+    {
+        DWORD bytes_written;
+
+        if (!WriteFile(file_handle, contents.data, contents.count, &bytes_written, 0) || 
+            contents.count != bytes_written)
+        {
+            result = false;
+        }
+
+        CloseHandle(file_handle);
+    }
+    else
+    {
+        result = false;
+    }
+
+    return result;
+
+}
+
+static String os_read_entire_file(String filename)
+{
+    String result = {0};
+
+    HANDLE file_handle = CreateFileA(filename.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     if (file_handle != INVALID_HANDLE_VALUE)
     {
         LARGE_INTEGER file_size;
@@ -43,7 +138,7 @@ String os_read_entire_file(String filepath)
                 if (!ReadFile(file_handle, result.data, result.count, &bytes_read, 0) || 
                     result.count != bytes_read)
                 {
-                    // Something went wrong
+                    // something went wrong
                     VirtualFree(result.data, 0, MEM_RELEASE);
 
                     result.data = 0;
@@ -58,7 +153,7 @@ String os_read_entire_file(String filepath)
     return result;
 }
 
-bool os_write_entire_file(String filename, String contents)
+static bool os_write_entire_file(String filename, String contents)
 {
     bool result = true;
 
@@ -84,7 +179,7 @@ bool os_write_entire_file(String filename, String contents)
     return result;
 }
 
-void os_free_file_contents(String* contents)
+static void os_free_file_contents(String* contents)
 {
     if (contents != 0)
     {
@@ -99,7 +194,7 @@ void os_free_file_contents(String* contents)
     return;
 }
 
-u64 os_now_us(void)
+static u64 os_now_us(void)
 {
     LARGE_INTEGER pc_count = os_win32_get_performance_counter_count();
     LARGE_INTEGER pc_freq  = os_win32_get_performance_counter_frequency();
@@ -109,7 +204,7 @@ u64 os_now_us(void)
     return result;
 }
 
-void os_sleep_ms(u32 milliseconds)
+static void os_sleep_ms(u32 milliseconds)
 {
     Sleep(milliseconds);
     return;
@@ -165,7 +260,7 @@ static void os_win32_unload_dll(OS_Win32_DLL* dll)
 // TIME
 //
 
-FILETIME os_win32_get_last_write_time_of_file(String filename)
+static FILETIME os_win32_get_last_write_time_of_file(String filename)
 {
     FILETIME last_write_time = {0};
 
@@ -180,20 +275,20 @@ FILETIME os_win32_get_last_write_time_of_file(String filename)
     return last_write_time;
 }
 
-f32 os_win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end, s64 perf_counter_freq)
+static f32 os_win32_get_seconds_elapsed(LARGE_INTEGER start, LARGE_INTEGER end, s64 perf_counter_freq)
 {
     f32 result = (f32)(end.QuadPart - start.QuadPart) / (f32)perf_counter_freq;
     return result;
 }
 
-LARGE_INTEGER os_win32_get_performance_counter_count(void)
+static LARGE_INTEGER os_win32_get_performance_counter_count(void)
 {
     LARGE_INTEGER result;
     QueryPerformanceCounter(&result);
     return result;
 }
 
-LARGE_INTEGER os_win32_get_performance_counter_frequency(void)
+static LARGE_INTEGER os_win32_get_performance_counter_frequency(void)
 {
     LARGE_INTEGER result;
     QueryPerformanceFrequency(&result);
@@ -208,7 +303,7 @@ LARGE_INTEGER os_win32_get_performance_counter_frequency(void)
 
 static u32 audio_playback_thread(void* param);
 
-s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
+static s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
 {
     IMMDeviceEnumerator* enumerator = 0;
     IMMDevice*           dev        = 0;
@@ -348,7 +443,7 @@ s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config)
     return (s32)result;
 }
 
-s32 os_win32_audio_start(OS_Audio_Device* device)
+static s32 os_win32_audio_start(OS_Audio_Device* device)
 {
     HRESULT result = -1;
 
@@ -372,7 +467,7 @@ s32 os_win32_audio_start(OS_Audio_Device* device)
     return (s32)result;
 }
 
-s32 os_win32_audio_stop(OS_Audio_Device* device)
+static s32 os_win32_audio_stop(OS_Audio_Device* device)
 {
     HRESULT result = -1;
     
@@ -391,7 +486,7 @@ s32 os_win32_audio_stop(OS_Audio_Device* device)
     return (s32)result;
 }
 
-void os_win32_audio_deinit(OS_Audio_Device* device)
+static void os_win32_audio_deinit(OS_Audio_Device* device)
 {
 #define WIN32_RELEASE_POINTER(p) do { if (p != 0) { (p)->lpVtbl->Release(p); (p) = 0; } } while (0)
 #define WIN32_RELEASE_HANDLE(h)  do { if (h != 0) { CloseHandle(h); (h) = 0; } } while (0)
@@ -414,7 +509,7 @@ void os_win32_audio_deinit(OS_Audio_Device* device)
     return;
 }
 
-u32 audio_playback_thread(void* param)
+static u32 audio_playback_thread(void* param)
 {
     OS_Audio_Device* device = (OS_Audio_Device*)param;
 
@@ -473,7 +568,7 @@ int wmain(int argc, WCHAR** argv)
     return result;
 }
 
-char* str_from_str16_in_place(WCHAR* wstr)
+static char* str_from_str16_in_place(WCHAR* wstr)
 {
     char* str = (char*)wstr;
 

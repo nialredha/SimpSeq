@@ -25,6 +25,12 @@
 #define WAV_FORMAT_CHUNK_ID   "fmt "
 #define WAV_DATA_CHUNK_ID     "data"
 
+#define WAV_FORMAT_SIZE 16
+#define WAV_FORMAT_EXT_SIZE WAV_FORMAT_SIZE + 24
+
+
+#define WAV_MIN_FILE_SIZE_FROM_DATA_SIZE(data_size) (sizeof(Wav_RIFF_Chunk) + sizeof(Wav_Chunk_Header) + WAV_FORMAT_SIZE + sizeof(Wav_Chunk_Header) + (data_size))
+
 typedef struct
 {
     u32 id;
@@ -90,33 +96,6 @@ enum
 #undef X
 };
 
-#if 0
-typedef struct
-{
-    // Extended Format (when format_tag == EXTENSIBLE && cb_size == 22)
-    u16 cb_size;
-    u16 valid_bits_per_sample;
-    u32 channel_mask;
-    u8  sub_format[16];
-} Wav_Format_Extension;
-
-typedef struct
-{
-    Wav_Format_Tag format_tag;
-    u16            num_channels;
-    u32            sample_rate;
-    u32            byte_rate;   // bytes per second -> (samples_per_second * bytes_per_sample * num_channels)
-    u16            block_align; // bytes per frame  -> (bytes_per_sample * num_channels)
-    u16            bits_per_sample;
-} Wav_Format;
-
-typedef struct
-{
-    Wav_Format           format;
-    Wav_Format_Extension extension;
-} Wav_Format_Extended;
-#endif
-
 typedef struct
 {
     Wav_Format_Tag format_tag;
@@ -139,7 +118,14 @@ typedef struct
     u8* buffer;
 } Wav_Data;
 
-// chunks
+typedef struct
+{
+    u16 num_channels;
+    u16 bytes_per_sample;
+    u32 sample_rate;
+} Wav_Render_Params;
+
+// parse
 Wav      wav_from_data      (Arena* arena, String data);
 Wav_List wav_list_from_data (Arena* arena, String data);
 
@@ -148,6 +134,11 @@ Wav_Sub_Chunk_Node wav_sub_chunk_from_id        (Wav_Sub_Chunk_List* list, u32 i
 
 Wav_Format wav_get_format(Wav_Sub_Chunk_List* list, String data);
 Wav_Data   wav_get_data  (Arena* arena, Wav_Sub_Chunk_List* list, String data);
+
+// render
+Wav_Data wav_render                    (Arena* arena, Wav_Render_Params params, Wav_Data data);
+bool     wav_render_entire_file        (Arena* arena, Wav_Render_Params params, Wav_Data data, String filename);
+bool     wav_render_append_data_to_file(String filename, Wav_Data data);
 
 // strings
 String wav_string_from_format_tag(Wav_Format_Tag format_tag);

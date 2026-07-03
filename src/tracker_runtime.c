@@ -54,33 +54,10 @@ s32 entry_point(s32 arg_count, char** args)
     Trk_Module_Post_Reload* trk_module_post_reload = 0;
     Trk_Module_Update*      trk_module_update      = 0;
 
-    Ring_Buffer output_buffer = rb_create(9600*4); // TODO[nr] @dobetter
+    Ring_Buffer rb_line_out = rb_create(9600*4); // TODO[nr] @dobetter
+    Ring_Buffer rb_file     = {0};
 
-    OS_Audio_Device device = {0};
-
-    Wav_Format desired_format = {0};
-    desired_format.format_tag      = Wav_Format_Tag_IEE_FLOAT;
-    desired_format.num_channels    = 2;
-    desired_format.sample_rate     = 48000;
-    desired_format.bits_per_sample = 32;
-
-    User_Data user_data = { &output_buffer };
-
-    OS_Audio_Config config = { desired_format, audio_callback, &user_data };
-
-    s32 result = os_win32_audio_init(&device, &config);
-    if (result < 0)
-    {
-        fprintf(stderr, "ERROR: failed to init audio client!\n");
-        return result;
-    }
-
-    result = os_win32_audio_start(&device);
-    if (result < 0)
-    {
-        fprintf(stderr, "ERROR: failed to start audio client!\n");
-        return result;
-    }
+    Ring_Buffer* rb = &rb_line_out;
 
     os_win32_reload_dll(&trk_module_dll);
 
@@ -90,6 +67,55 @@ s32 entry_point(s32 arg_count, char** args)
 
     if (trk_module_post_load)   { trk_module_post_load(&trk);   }
     if (trk_module_post_reload) { trk_module_post_reload(&trk); }
+
+    // audio init
+    OS_Audio_Device device = {0};
+    {
+        Wav_Format desired_format = {0};
+        desired_format.format_tag      = Wav_Format_Tag_IEE_FLOAT;
+        desired_format.num_channels    = 2;
+        desired_format.sample_rate     = 48000;
+        desired_format.bits_per_sample = 32;
+
+        User_Data user_data = { &rb_line_out };
+
+        OS_Audio_Config config = { desired_format, audio_callback, &user_data };
+
+        s32 result = os_win32_audio_init(&device, &config);
+        if (result < 0)
+        {
+            fprintf(stderr, "ERROR: failed to init audio client!\n");
+            return result;
+        }
+
+        result = os_win32_audio_start(&device);
+        if (result < 0)
+        {
+            fprintf(stderr, "ERROR: failed to start audio client!\n");
+            return result;
+        }
+    }
+
+    Arena file_arena = {0};
+    String render_filename = STR_LIT("render.wav");
+
+    if (trk.render_to_file)
+    {
+        arena_alloc(&file_arena, 1024*1024);
+
+        rb_file = rb_create(9600*4); // TODO[nr] @dobetter
+
+        Wav_Render_Params params = {
+            .num_channels = SUPPORTED_CHANNEL_COUNT,
+            .bytes_per_sample = SUPPORTED_BIT_DEPTH / 8,
+            .sample_rate = SUPPORTED_SAMPLE_RATE
+        };
+
+        // write valid WAV file with no data (yet)
+        wav_render_entire_file(&file_arena, params, (Wav_Data){0}, render_filename);
+
+        rb = &rb_file;
+    }
 
     bool reload = false;
 
@@ -127,18 +153,36 @@ s32 entry_point(s32 arg_count, char** args)
 
         if (trk_module_update != 0)
         {
-            trk_module_update(&trk, &output_buffer);
+            trk_module_update(&trk, rb);
+        }
+
+        if (trk.render_to_file)
+        {
+            u8 temp_buffer[9600] = {0};
+
+            u32 bytes_read = rb_read(rb, temp_buffer, 9600);
+
+            // stream data into file
+            {
+                if (wav_render_append_data_to_file(render_filename, (Wav_Data){ .buffer=temp_buffer, .size=bytes_read}))
+                {
+                    printf("Streamed %d bytes into %s!\n", bytes_read, render_filename.data);
+                }
+            }
+
         }
 
         os_sleep_ms(10);
     }
 
     // stop playing device
-    result = os_win32_audio_stop(&device);
-    if (result < 0)
     {
-        fprintf(stderr, "ERROR: failed to stop audio client!\n");
-        return result;
+        s32 result = os_win32_audio_stop(&device);
+        if (result < 0)
+        {
+            fprintf(stderr, "ERROR: failed to stop audio client!\n");
+            return result;
+        }
     }
 
     os_win32_audio_deinit(&device);

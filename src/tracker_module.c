@@ -35,13 +35,16 @@ void trk_module_post_reload(Trk* trk)
 
     trk_pattern_reset(&trk->pattern);
 
+    // trk->render_to_file = true;
+
     // trk->pattern.bpm = 95;
     trk->pattern.bpm    = 120;
     // trk->pattern.bpm = 190;
 
-    trk->pattern.volume     = 0.8f;
+    trk->pattern.volume     = 1.0f;
     trk->pattern.cell_count = 16;
     trk->pattern.loop       = true;
+    // trk->pattern.no_fx      = false;
 
     u32 delay_size = (u32)((60.0f / trk->pattern.bpm) * (f32)SUPPORTED_SAMPLE_RATE);
     printf("DELAY SIZE: %u\n", delay_size);
@@ -49,9 +52,9 @@ void trk_module_post_reload(Trk* trk)
     trk->feedback_comb_l = fx_feedback_comb_init(&trk->reload_arena, (u32)(delay_size/1.5f), 0.5f, 0.6f);
     trk->feedback_comb_r = fx_feedback_comb_init(&trk->reload_arena, (u32)(delay_size/3.0f), 0.5f, 0.6f);
 
-    TRK_ROW_NEW(trk, v2, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 0010 1000 0010"))
+    TRK_ROW_NEW(trk, v2, STR_LIT("../data/guitar.wav"),  STR_LIT("1000 0000 0000 0000"))
     {
-        row->params.volume     = 0.1f;
+        row->params.volume     = 0.4f;
         row->params.delay      = 0.5f;
         row->params.trim_left  = 0.25f;
         row->params.trim_right = 0.5f;
@@ -110,7 +113,8 @@ void trk_module_post_reload(Trk* trk)
         row->params.pan    = -0.5f;
     }
 
-    TRK_ROW_NEW(trk, ss, STR_LIT("../data/snare.wav"), STR_LIT("0010 1001 0010 1001"))
+    // TRK_ROW_NEW(trk, ss, STR_LIT("../data/snare.wav"), STR_LIT("0010 1001 0010 1001"))
+    TRK_ROW_NEW(trk, ss, STR_LIT("../data/snare.wav"), STR_LIT("1010 1010 1001 1010"))
     {
         row->params.volume = 0.15f;
         row->params.pan    = 0.0f;

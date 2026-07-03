@@ -16,13 +16,13 @@ typedef struct
     u64 time_created;
 } OS_File_Properties;
 
-static String os_win32_read_entire_file (String filename);
-static bool   os_win32_write_entire_file(String filename, String content);
+static OS_File_Properties os_win32_get_file_properties(String filename);
 
-static OS_File_Properties os_win32_get_file_properties(String filepath);
-
-static String os_win32_read_entire_file (String filepath);
-static bool   os_win32_write_entire_file(String filename, String contents);
+static String os_read_from_file    (String filename, u32 byte_offset, u32 size);
+static bool   os_write_to_file     (String filename, String contents, u32 byte_offset);
+static bool   os_append_to_file    (String filename, String contents);
+static String os_read_entire_file  (String filename);
+static bool   os_write_entire_file (String filename, String contents);
 
 static void os_win32_free_file_contents(String* contents);
 
@@ -49,10 +49,10 @@ static void* os_win32_get_function_pointer(OS_Win32_DLL* dll, String function_na
 // time
 //
 
-FILETIME      os_win32_get_last_write_time_of_file      (String filename);
-f32           os_win32_get_seconds_elapsed              (LARGE_INTEGER start, LARGE_INTEGER end, s64 perf_counter_freq);
-LARGE_INTEGER os_win32_get_performance_counter_count    (void);
-LARGE_INTEGER os_win32_get_performance_counter_frequency(void);
+static FILETIME      os_win32_get_last_write_time_of_file      (String filename);
+static f32           os_win32_get_seconds_elapsed              (LARGE_INTEGER start, LARGE_INTEGER end, s64 perf_counter_freq);
+static LARGE_INTEGER os_win32_get_performance_counter_count    (void);
+static LARGE_INTEGER os_win32_get_performance_counter_frequency(void);
 
 //
 // intrinsics
@@ -60,27 +60,33 @@ LARGE_INTEGER os_win32_get_performance_counter_frequency(void);
 
 #include <winnt.h>
 
-inline s32 os_win32_atomic_add_s32(s32 volatile *value, s32 addend)
+static inline s32 os_win32_atomic_add_s32(s32 volatile *value, s32 addend)
 {
     s32 result = _InterlockedExchangeAdd((LONG volatile *)value, addend);
     return result;
 }
 
-inline s64 os_win32_atomic_add_s64(s64 volatile *value, s64 addend)
+static inline s64 os_win32_atomic_add_s64(s64 volatile *value, s64 addend)
 {
     s64 result = _InterlockedExchangeAdd64(value, addend);
     return result;
 }
 
-inline s32 os_win32_atomic_compare_exchange_s32(s32 volatile *dest, s32 exchange, s32 comperand)
+static inline s32 os_win32_atomic_compare_exchange_s32(s32 volatile *dest, s32 exchange, s32 comperand)
 {
     s32 result = _InterlockedCompareExchange((LONG volatile *)dest, exchange, comperand);
     return result;
 }
 
-inline s64 os_win32_atomic_compare_exchange_s64(s64 volatile *dest, s64 exchange, s64 comperand)
+static inline s64 os_win32_atomic_compare_exchange_s64(s64 volatile *dest, s64 exchange, s64 comperand)
 {
     s64 result = _InterlockedCompareExchange64(dest, exchange, comperand);
+    return result;
+}
+
+static inline s32 os_win32_atomic_exchange(s32 volatile *target, s32 value)
+{
+    s32 result = _InterlockedExchange((LONG volatile *)target, value);
     return result;
 }
 
@@ -136,9 +142,9 @@ typedef struct
     bool   quit;
 } OS_Audio_Device;
 
-s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config);
-s32 os_win32_audio_start(OS_Audio_Device* device);
-s32 os_win32_audio_stop(OS_Audio_Device* device);
-void os_win32_audio_deinit(OS_Audio_Device* device);
+static s32 os_win32_audio_init(OS_Audio_Device* device, OS_Audio_Config* config);
+static s32 os_win32_audio_start(OS_Audio_Device* device);
+static s32 os_win32_audio_stop(OS_Audio_Device* device);
+static void os_win32_audio_deinit(OS_Audio_Device* device);
 
 #endif // OS_WIN32_H

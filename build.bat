@@ -20,6 +20,9 @@ REM cl %cl_includes% ..\src\wav_dump_raw.c %c_flags% /link /out:"wav_dump_raw.ex
 REM WAV Play
 REM cl %cl_includes% ..\src\wav_play.c %c_flags% /link ole32.lib /out:"wav_play.exe" ole32.lib winmm.lib
 
+REM WAV Read Write
+REM cl %cl_includes% ..\src\wav_read_write.c %c_flags% /link ole32.lib /out:"wav_read_write.exe" ole32.lib winmm.lib
+
 REM WAV Sequencer
 set l_flags=-incremental:no -opt:ref
 set export_funcs=/EXPORT:trk_module_post_load /EXPORT:trk_module_post_reload /EXPORT:trk_module_update 
