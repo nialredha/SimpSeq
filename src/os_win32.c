@@ -32,7 +32,7 @@ static String os_read_from_file(String filename, u32 byte_offset, u32 size)
         LARGE_INTEGER file_size;
         if (GetFileSizeEx(file_handle, &file_size))
         {
-            if ((u32)file_size.QuadPart > byte_offset + size)
+            if ((u32)file_size.QuadPart >= byte_offset + size)
             {
                 result.count = size;
                 result.data  = (char*)VirtualAlloc(0, result.count, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);

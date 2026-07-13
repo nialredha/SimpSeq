@@ -138,7 +138,7 @@ Wav_Data   wav_get_data  (Arena* arena, Wav_Sub_Chunk_List* list, String data);
 // render
 Wav_Data wav_render                    (Arena* arena, Wav_Render_Params params, Wav_Data data);
 bool     wav_render_entire_file        (Arena* arena, Wav_Render_Params params, Wav_Data data, String filename);
-bool     wav_render_append_data_to_file(String filename, Wav_Data data);
+bool     wav_render_append_data_to_file(Arena* arena, String filename, Wav_Data data);
 
 // strings
 String wav_string_from_format_tag(Wav_Format_Tag format_tag);

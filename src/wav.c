@@ -201,31 +201,36 @@ bool wav_render_entire_file(Arena* arena, Wav_Render_Params params, Wav_Data dat
     return result;
 }
 
-bool wav_render_append_data_to_file(String filename, Wav_Data data)
+bool wav_render_append_data_to_file(Arena* arena, String filename, Wav_Data data)
 {
     (void)data;
     (void)filename;
 
     bool result = false;
 
-#if 0
-
+#if 1
     Arena_Temp temp_arena = arena_temp_begin(arena);
     {
-        String file_data = os_read_from_file(filename, 0, WAV_MIN_FILE_SIZE_FROM_DATA_SIZE(0));
-        Wav_Sub_Chunk_List sub_chunks = wav_sub_chunk_list_from_data(arena, file_data)
+        String file_str = os_read_from_file(filename, 0, WAV_MIN_FILE_SIZE_FROM_DATA_SIZE(0));
 
-        // get RIFF chunk
-        String file_data = os_read_from_file(filename, 0, sizeof(Wav_RIFF_Chunk));
-        Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)file_data.data;
-
-        assert(riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID));
-        assert(riff_chunk->format    == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT));
-
-        // update RIFF chunk header to reflect new size
+        // update size field in RIFF chunk and data chunk header
         {
+            // RIFF
+            Wav_RIFF_Chunk* riff_chunk = (Wav_RIFF_Chunk*)file_str.data;
+
+            assert(riff_chunk->header.id == WAV_FOURCC(WAV_RIFF_CHUNK_ID));
+            assert(riff_chunk->format    == WAV_FOURCC(WAV_RIFF_CHUNK_FORMAT));
+
             riff_chunk->header.size += data.size;
-            result = os_write_to_file(filename, file_data, 0);
+
+            // data 
+            Wav_Sub_Chunk_List sub_chunks      = wav_sub_chunk_list_from_data(arena, file_str);
+            Wav_Sub_Chunk_Node data_sub_chunk = wav_sub_chunk_from_id(&sub_chunks, WAV_FOURCC(WAV_DATA_CHUNK_ID));
+
+            Wav_Chunk_Header* data_hdr = (Wav_Chunk_Header*)(file_str.data + data_sub_chunk.data_offset - sizeof(Wav_Chunk_Header));
+            data_hdr->size += data.size;
+
+            result = os_write_to_file(filename, file_str, 0);
         }
 
         // append new data

@@ -112,7 +112,15 @@ s32 entry_point(s32 arg_count, char** args)
         };
 
         // write valid WAV file with no data (yet)
-        wav_render_entire_file(&file_arena, params, (Wav_Data){0}, render_filename);
+        if (!wav_render_entire_file(&file_arena, params, (Wav_Data){0}, render_filename))
+        {
+            printf("Failed to write empty WAV file %s!!!\n", render_filename.data);
+        }
+        else
+        {
+            printf("Wrote empty WAV file %s!!!\n", render_filename.data);
+        }
+
 
         rb = &rb_file;
     }
@@ -158,16 +166,16 @@ s32 entry_point(s32 arg_count, char** args)
 
         if (trk.render_to_file)
         {
-            u8 temp_buffer[9600] = {0};
+            u8 temp_buffer[9600*4] = {0};
 
-            u32 bytes_read = rb_read(rb, temp_buffer, 9600);
+            u32 bytes_to_read = rb_write_space(&rb_line_out);
+            u32 bytes_read    = rb_read(rb, temp_buffer, bytes_to_read);
 
             // stream data into file
             {
-                if (wav_render_append_data_to_file(render_filename, (Wav_Data){ .buffer=temp_buffer, .size=bytes_read}))
-                {
-                    printf("Streamed %d bytes into %s!\n", bytes_read, render_filename.data);
-                }
+                wav_render_append_data_to_file(&file_arena, render_filename, (Wav_Data){ .buffer=temp_buffer, .size=bytes_read});
+                u32 bytes_written = rb_write(&rb_line_out, temp_buffer, bytes_read);
+                assert(bytes_read == bytes_written);
             }
 
         }

@@ -485,6 +485,18 @@ static u32 rb_write(Ring_Buffer* rb, u8* src, u32 src_amount)
     return amount_to_write;
 }
 
+static u32 rb_read_amount(Ring_Buffer* rb)
+{
+    u32 result = rb->capacity - (u32)rb->amount_free;
+    return result;
+}
+
+static u32 rb_write_space(Ring_Buffer* rb)
+{
+    u32 result = (u32)rb->amount_free;
+    return result;
+}
+
 //
 // slot pool
 //

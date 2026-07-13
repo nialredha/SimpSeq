@@ -35,7 +35,7 @@ void trk_module_post_reload(Trk* trk)
 
     trk_pattern_reset(&trk->pattern);
 
-    // trk->render_to_file = true;
+    trk->render_to_file = true;
 
     // trk->pattern.bpm = 95;
     trk->pattern.bpm    = 120;

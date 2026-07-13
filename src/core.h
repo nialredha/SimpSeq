@@ -135,6 +135,9 @@ static void rb_clear(Ring_Buffer* rb);
 static u32 rb_read (Ring_Buffer* rb, u8* dest, u32 dest_amount);
 static u32 rb_write(Ring_Buffer* rb, u8* src, u32 src_amount);
 
+static u32 rb_read_amount(Ring_Buffer* rb);
+static u32 rb_write_space(Ring_Buffer* rb);
+
 //
 // slot pool
 //
