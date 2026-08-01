@@ -231,6 +231,7 @@ static void trk_row_from_str(Trk_Row* row, String str)
                 cell->active = true;
                 trk_params_init(&cell->params);
                 cell->retrig = (Trk_Retrig){0};
+                cell->swing  = 0;
                 break;
             }
             default:
@@ -385,7 +386,7 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
                             params.trim_left  = row->params.trim_left * cell->params.trim_left;
                             params.trim_right = row->params.trim_right * cell->params.trim_right;
                             params.delay      = row->params.delay * cell->params.delay;
-
+                            
                             f32 pan           = row->params.pan + cell->params.pan;
                             params.pan = pan < -1.0f ? pan = -1.0f : pan > 1.0f ? pan = 1.0f : pan;
 
@@ -400,7 +401,15 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
                         Trk_Sound* sound = trk_sound_get(&trk->sound_slop, sound_id);
                         sound->params    = params;
 
-                        // retrig enabled
+                        // swing
+                        u32 swing_in_samples = 0;
+                        if (cell->swing > 0)
+                        {
+                            swing_in_samples = (u32)(cell->swing * (f32)samples_per_beat);
+                            sound->playhead = -1 * swing_in_samples;
+                        }
+
+                        // retrig
                         if (cell->retrig.count > 0 && cell->retrig.division > 1)
                         {
                             assert(cell->retrig.count <= cell->retrig.division);
@@ -423,7 +432,7 @@ static void trk_play_pattern(Trk* trk, Trk_Pattern* pattern, Ring_Buffer* out)
                                 sound->params.volume = pattern->volume * row->params.volume * cell_volume;
 
 
-                                sound->playhead = -1 * (div_index * samples_per_div);
+                                sound->playhead = -1 * (swing_in_samples + (div_index * samples_per_div));
                             }
                         }
                     }

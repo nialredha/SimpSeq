@@ -62,8 +62,11 @@ typedef struct
 typedef struct
 {
     bool       active;
+
     Trk_Params params;
+
     Trk_Retrig retrig;
+    f32        swing;
 } Trk_Cell;
 
 typedef struct
